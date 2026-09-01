@@ -1,0 +1,1113 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>OATH — Every claim faces a jury.</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,450;9..144,560;9..144,680&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* ===================== TOKENS ===================== */
+:root{
+  --ink:#131009; --ink-2:#1C1712; --ink-3:#262017; --line:#2E2619;
+  --paper:#F2EBDD; --paper-dim:#A89C82;
+  --seal-red:#B3442E; --verdict-green:#3E8A62; --verdict-amber:#C08A2E; --verdict-blue:#4E7CA8;
+  --gold:#D9A83C;
+  --serif:'Fraunces', Georgia, serif;
+  --mono:'IBM Plex Mono', ui-monospace, monospace;
+  --sans:'Inter', -apple-system, sans-serif;
+}
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;background:var(--ink);color:var(--paper);font-family:var(--sans);}
+body{position:relative;min-height:100vh;}
+a{color:inherit;}
+button{font-family:inherit;cursor:pointer;}
+input,textarea,select{font-family:inherit;}
+::selection{background:var(--gold);color:var(--ink);}
+
+/* paper grain overlay */
+#grain{
+  position:fixed;inset:0;pointer-events:none;z-index:9999;opacity:.045;mix-blend-mode:overlay;
+}
+
+/* ===================== LAYOUT ===================== */
+#app{display:flex;min-height:100vh;}
+#rail{
+  width:280px;flex:0 0 280px;border-right:1px solid var(--line);background:var(--ink-2);
+  padding:22px 18px;position:sticky;top:0;height:100vh;display:flex;flex-direction:column;gap:26px;
+}
+#main{flex:1;min-width:0;display:flex;flex-direction:column;}
+#content{flex:1;padding:34px 40px 60px;max-width:1240px;width:100%;margin:0 auto;}
+
+.brand{display:flex;flex-direction:column;gap:2px;}
+.brand-mark{font-family:var(--serif);font-size:26px;font-weight:680;letter-spacing:.5px;}
+.brand-mark span{color:var(--seal-red);}
+.brand-tag{font-family:var(--mono);font-size:10.5px;letter-spacing:1.4px;text-transform:uppercase;color:var(--paper-dim);}
+
+.navlist{display:flex;flex-direction:column;gap:2px;margin-top:6px;}
+.navitem{
+  font-family:var(--mono);font-size:11.5px;letter-spacing:1.3px;text-transform:uppercase;
+  color:var(--paper-dim);text-decoration:none;padding:9px 10px;border-radius:3px;border:1px solid transparent;
+  display:flex;align-items:center;gap:9px;transition:background .15s,color .15s,border-color .15s;
+}
+.navitem:hover{color:var(--paper);background:var(--ink-3);}
+.navitem.active{color:var(--gold);border-color:var(--line);background:var(--ink-3);}
+.navitem .dot{width:5px;height:5px;border-radius:1px;background:currentColor;flex:0 0 auto;}
+
+.rail-stats{border-top:1px double var(--line);padding-top:16px;display:flex;flex-direction:column;gap:11px;}
+.rail-stat-row{display:flex;justify-content:space-between;font-family:var(--mono);font-size:11px;letter-spacing:.4px;}
+.rail-stat-row .k{color:var(--paper-dim);text-transform:uppercase;}
+.rail-stat-row .v{color:var(--paper);}
+
+.rail-seal{margin-top:auto;padding-top:16px;border-top:1px solid var(--line);}
+.rail-seal-label{font-family:var(--mono);font-size:9.5px;letter-spacing:1.4px;text-transform:uppercase;color:var(--paper-dim);margin-bottom:8px;}
+
+#topbar{display:none;}
+
+@media (max-width:900px){
+  #rail{display:none;}
+  #topbar{
+    display:flex;align-items:center;justify-content:space-between;gap:10px;
+    padding:14px 16px;border-bottom:1px solid var(--line);background:var(--ink-2);position:sticky;top:0;z-index:50;
+  }
+  #topbar .brand-mark{font-size:19px;}
+  #topbar select{background:var(--ink-3);color:var(--paper);border:1px solid var(--line);font-family:var(--mono);
+    font-size:10.5px;letter-spacing:1px;text-transform:uppercase;padding:7px 8px;border-radius:3px;}
+  #content{padding:22px 16px 50px;}
+}
+
+/* ===================== WIRE TICKER ===================== */
+.ticker-wrap{
+  border-top:1px solid var(--line);border-bottom:1px solid var(--line);background:var(--ink-2);
+  overflow:hidden;white-space:nowrap;position:relative;
+}
+.ticker-track{display:inline-flex;gap:40px;padding:9px 0;animation:ticker 42s linear infinite;}
+.ticker-wrap:hover .ticker-track{animation-play-state:paused;}
+.ticker-item{font-family:var(--mono);font-size:11px;letter-spacing:.6px;color:var(--paper-dim);display:inline-flex;gap:8px;align-items:center;}
+.ticker-item b{color:var(--paper);font-weight:500;}
+@keyframes ticker{from{transform:translateX(0);}to{transform:translateX(-50%);}}
+@media (prefers-reduced-motion:reduce){.ticker-track{animation:none;}}
+
+/* ===================== DEMO BADGE ===================== */
+.demo-badge{
+  position:fixed;top:16px;right:18px;z-index:200;font-family:var(--mono);font-size:10px;letter-spacing:1.2px;
+  text-transform:uppercase;color:var(--paper-dim);background:var(--ink-2);border:1px solid var(--line);
+  padding:6px 10px;border-radius:3px;display:flex;align-items:center;gap:7px;
+}
+.demo-badge .pip{width:6px;height:6px;border-radius:50%;background:var(--paper-dim);}
+@media (max-width:900px){.demo-badge{position:static;margin-left:auto;}}
+
+/* ===================== FOLDER CARD ===================== */
+.folder{
+  background:var(--ink-2);border:1px solid var(--line);border-radius:8px;position:relative;padding:26px 24px 22px;
+  margin-top:22px;
+}
+.folder-tab{
+  position:absolute;top:-15px;left:22px;background:var(--ink-3);border:1px solid var(--line);border-bottom:none;
+  border-radius:5px 5px 0 0;padding:5px 12px 8px;font-family:var(--mono);font-size:10.5px;letter-spacing:1.4px;
+  text-transform:uppercase;color:var(--gold);
+}
+
+/* ===================== HERO / S1 ===================== */
+.hero-grid{display:grid;grid-template-columns:58fr 42fr;gap:34px;align-items:start;}
+@media (max-width:1050px){.hero-grid{grid-template-columns:1fr;}}
+
+h1.hero-headline{
+  font-family:var(--serif);font-weight:560;font-size:clamp(32px,4.6vw,52px);line-height:1.05;margin:6px 0 12px;
+  letter-spacing:-0.5px;
+}
+.hero-sub{font-size:14.5px;line-height:1.6;color:var(--paper-dim);max-width:52ch;margin:0 0 22px;}
+
+.eyebrow{font-family:var(--mono);font-size:10.5px;letter-spacing:2px;text-transform:uppercase;color:var(--seal-red);}
+
+.filing-steps{font-family:var(--mono);font-size:10.5px;letter-spacing:.8px;text-transform:uppercase;color:var(--paper-dim);
+  display:flex;flex-wrap:wrap;gap:6px;margin-bottom:20px;}
+.filing-steps span:not(:last-child)::after{content:'·';margin-left:6px;color:var(--line);}
+
+label.field-label{display:block;font-family:var(--mono);font-size:10.5px;letter-spacing:1.4px;text-transform:uppercase;
+  color:var(--paper-dim);margin:16px 0 6px;}
+.field-label b{color:var(--gold);}
+input.field, textarea.field{
+  width:100%;background:var(--ink-3);border:1px solid var(--line);border-radius:5px;color:var(--paper);
+  padding:11px 12px;font-size:13.5px;outline:none;transition:border-color .15s;
+}
+input.field{font-family:var(--mono);}
+textarea.field{font-family:var(--serif);font-size:15px;line-height:1.5;min-height:78px;resize:vertical;}
+input.field:focus, textarea.field:focus{border-color:var(--gold);}
+input.field::placeholder, textarea.field::placeholder{color:#5d5644;}
+
+.exhibit-rows{display:flex;flex-direction:column;gap:7px;}
+.exhibit-row{display:flex;align-items:center;gap:8px;}
+.exhibit-row .ex-label{font-family:var(--mono);font-size:10.5px;color:var(--gold);letter-spacing:1px;width:64px;flex:0 0 auto;}
+.ghost-btn{
+  background:transparent;border:1px dashed var(--line);color:var(--paper-dim);font-family:var(--mono);
+  font-size:10.5px;letter-spacing:1px;text-transform:uppercase;padding:8px 12px;border-radius:5px;margin-top:8px;
+  transition:border-color .15s,color .15s;
+}
+.ghost-btn:hover{border-color:var(--gold);color:var(--gold);}
+
+.chip-row{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px;}
+.type-chip{
+  display:flex;align-items:center;gap:7px;border:1px solid var(--line);background:var(--ink-3);color:var(--paper-dim);
+  font-family:var(--mono);font-size:10.5px;letter-spacing:.8px;text-transform:uppercase;padding:8px 11px;
+  border-radius:5px;transition:all .15s;
+}
+.type-chip svg{width:13px;height:13px;stroke:currentColor;fill:none;}
+.type-chip:hover{color:var(--paper);}
+.type-chip.selected{border-color:var(--gold);color:var(--gold);background:rgba(217,168,60,.08);}
+
+.submit-btn{
+  margin-top:20px;background:var(--paper);color:var(--ink);border:none;border-radius:5px;padding:13px 22px;
+  font-family:var(--mono);font-size:12px;letter-spacing:1.6px;text-transform:uppercase;font-weight:600;
+  transition:background .15s;
+}
+.submit-btn:hover{background:var(--gold);}
+.stake-line{font-family:var(--mono);font-size:10.5px;color:var(--paper-dim);letter-spacing:.5px;margin-top:10px;}
+
+.demo-banner{
+  border:1px solid var(--line);background:var(--ink-3);border-left:3px solid var(--gold);border-radius:0 5px 5px 0;
+  padding:10px 14px;font-family:var(--mono);font-size:11px;color:var(--paper-dim);line-height:1.6;margin-bottom:18px;
+}
+.demo-banner a{color:var(--gold);text-decoration:underline;}
+
+/* caseboard */
+.board-item{display:flex;gap:12px;align-items:flex-start;padding:12px 0;border-bottom:1px solid var(--line);position:relative;}
+.board-item:last-child{border-bottom:none;}
+.thumb{width:6px;height:6px;border-radius:50%;background:var(--seal-red);margin-top:5px;flex:0 0 auto;
+  box-shadow:0 0 0 3px rgba(179,68,46,.18);}
+.board-item-title{font-family:var(--mono);font-size:10.5px;letter-spacing:1.3px;text-transform:uppercase;color:var(--paper-dim);margin-bottom:5px;}
+.board-item-body{font-size:12.5px;color:var(--paper);}
+.exchip{display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:10px;border:1px solid var(--line);
+  border-radius:4px;padding:3px 7px;margin:3px 5px 0 0;color:var(--paper-dim);}
+.exchip.ok{color:var(--verdict-green);border-color:rgba(62,138,98,.4);}
+.exchip.dead{color:var(--seal-red);border-color:rgba(179,68,46,.4);}
+.exchip .tick{font-weight:700;}
+.juror-chip{display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:10px;border:1px solid var(--line);
+  border-radius:4px;padding:3px 8px;margin:3px 5px 0 0;color:#584f38;transition:color .3s,border-color .3s;}
+.juror-chip.lit{color:var(--paper);border-color:var(--gold);}
+
+/* ===================== STAMP ===================== */
+.stamp{
+  display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-weight:600;font-size:12px;
+  letter-spacing:1.6px;text-transform:uppercase;padding:8px 14px;border:2px double currentColor;border-radius:4px;
+  transform:rotate(-3deg);position:relative;background:var(--ink-2);
+}
+.stamp.mini{font-size:9px;padding:3px 8px;border-width:1px;letter-spacing:1px;transform:rotate(-3deg);}
+.stamp.verdict-1{color:var(--verdict-green);}
+.stamp.verdict-2{color:var(--verdict-amber);}
+.stamp.verdict-3{color:var(--seal-red);}
+.stamp.verdict-4{color:var(--verdict-blue);}
+.stamp.verdict-0{color:var(--paper-dim);}
+.stamp.landing{animation:stampland .38s cubic-bezier(.2,.9,.3,1.2);}
+@keyframes stampland{
+  0%{transform:scale(2.4) rotate(-3deg);opacity:0;filter:blur(3px);}
+  70%{transform:scale(.96) rotate(-3deg);opacity:1;filter:blur(0);}
+  85%{transform:scale(1.04) rotate(-5deg);}
+  100%{transform:scale(1) rotate(-3deg);}
+}
+@media (prefers-reduced-motion:reduce){.stamp.landing{animation:none;}}
+
+/* ===================== SEAL SCORE ===================== */
+.seal-wrap{display:flex;flex-direction:column;align-items:center;gap:6px;}
+.seal-num{font-family:var(--serif);font-weight:680;}
+.seal-band-label{font-family:var(--mono);font-size:9.5px;letter-spacing:1.4px;text-transform:uppercase;color:var(--paper-dim);}
+
+/* ===================== DOCKET TABLE ===================== */
+.docket-toolbar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;margin-bottom:16px;}
+.filter-chips{display:flex;flex-wrap:wrap;gap:6px;}
+.fchip{
+  font-family:var(--mono);font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--paper-dim);
+  border:1px solid var(--line);background:var(--ink-2);padding:6px 10px;border-radius:4px;transition:all .15s;
+}
+.fchip.on{color:var(--gold);border-color:var(--gold);}
+.search-box{background:var(--ink-2);border:1px solid var(--line);border-radius:4px;padding:7px 10px;font-family:var(--mono);
+  font-size:11px;color:var(--paper);min-width:180px;}
+.search-box::placeholder{color:var(--paper-dim);}
+
+table.docket{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:12px;}
+table.docket thead th{
+  position:sticky;top:0;background:var(--ink-2);text-align:left;padding:10px 12px;font-size:10px;letter-spacing:1.2px;
+  text-transform:uppercase;color:var(--paper-dim);border-bottom:1px double var(--line);cursor:pointer;white-space:nowrap;
+}
+table.docket thead th:hover{color:var(--paper);}
+table.docket tbody td{padding:11px 12px;border-bottom:1px solid var(--line);vertical-align:middle;}
+table.docket tbody tr{cursor:pointer;transition:background .12s;animation:rowIn .3s ease both;}
+table.docket tbody tr:hover{background:var(--ink-2);}
+@keyframes rowIn{from{opacity:0;transform:translateX(-8px);}to{opacity:1;transform:none;}}
+.case-id{color:var(--gold);}
+.subj-cell{font-family:var(--serif);font-size:13.5px;color:var(--paper);}
+.conf-cell{font-weight:600;}
+.status-txt{letter-spacing:1px;}
+.arrow-cell{color:var(--paper-dim);text-align:right;}
+tr:hover .arrow-cell{color:var(--gold);}
+
+@media (max-width:720px){
+  table.docket thead{display:none;}
+  table.docket, table.docket tbody, table.docket tr, table.docket td{display:block;width:100%;}
+  table.docket tr{border:1px solid var(--line);border-radius:6px;margin-bottom:10px;padding:10px 12px;}
+  table.docket td{border-bottom:none;padding:4px 0;}
+  table.docket td::before{content:attr(data-label) ' — ';color:var(--paper-dim);}
+}
+
+/* ===================== CASE FILE ===================== */
+.file-header{display:grid;grid-template-columns:1fr 300px;gap:30px;}
+@media (max-width:900px){.file-header{grid-template-columns:1fr;}}
+.meta-strip{font-family:var(--mono);font-size:10.5px;letter-spacing:.6px;color:var(--paper-dim);display:flex;flex-wrap:wrap;gap:5px;margin-top:14px;}
+.meta-strip span:not(:last-child)::after{content:'·';margin-left:8px;color:var(--line);}
+.pull-quote{
+  font-family:var(--serif);font-size:19px;line-height:1.45;padding-left:16px;margin:16px 0;
+}
+.pull-quote.seal-red{border-left:3px solid var(--seal-red);}
+.pull-quote.gold{border-left:3px solid var(--gold);}
+.sidecol .stamp{margin-bottom:10px;}
+.sidecol{display:flex;flex-direction:column;gap:14px;}
+.sc-row{font-family:var(--mono);font-size:11px;color:var(--paper-dim);}
+.sc-row b{color:var(--paper);}
+.action-btn{
+  width:100%;background:transparent;border:1px solid var(--gold);color:var(--gold);border-radius:5px;padding:11px;
+  font-family:var(--mono);font-size:11px;letter-spacing:1.3px;text-transform:uppercase;transition:all .15s;
+}
+.action-btn:hover{background:var(--gold);color:var(--ink);}
+.action-btn[disabled]{border-color:var(--line);color:var(--paper-dim);cursor:not-allowed;}
+.action-btn[disabled]:hover{background:transparent;color:var(--paper-dim);}
+
+.tabs{display:flex;gap:4px;margin:26px 0 0;border-bottom:1px solid var(--line);}
+.tab-btn{
+  font-family:var(--mono);font-size:10.5px;letter-spacing:1.2px;text-transform:uppercase;color:var(--paper-dim);
+  background:transparent;border:none;padding:10px 14px;display:flex;align-items:center;gap:7px;border-bottom:2px solid transparent;
+}
+.tab-btn .dot{width:6px;height:6px;border-radius:50%;}
+.tab-btn.active{color:var(--paper);border-bottom-color:var(--gold);}
+
+.exhibit-pin{padding:18px 0 4px;animation:exIn .35s ease both;}
+@keyframes exIn{from{opacity:0;transform:translateY(6px);}to{opacity:1;transform:none;}}
+.ex-url{font-family:var(--mono);font-size:12px;color:var(--paper);word-break:break-all;}
+.ex-status{display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:10px;letter-spacing:1px;
+  border:1px solid var(--line);border-radius:4px;padding:3px 8px;margin:8px 0;}
+.ex-preview{
+  font-family:var(--mono);font-size:11.5px;color:var(--paper-dim);line-height:1.6;background:var(--ink-3);
+  border:1px solid var(--line);border-radius:5px;padding:12px 14px;filter:blur(1.5px);transition:filter .2s;
+}
+.ex-preview:hover{filter:blur(0);}
+
+.transcript-head{font-family:var(--mono);font-size:10.5px;letter-spacing:1.2px;text-transform:uppercase;color:var(--paper-dim);
+  border-top:3px double var(--line);padding-top:14px;margin-top:26px;}
+.transcript-body{font-family:var(--serif);font-size:15px;line-height:1.7;color:var(--paper);margin:12px 0;min-height:1.7em;}
+.citelist{display:flex;flex-direction:column;gap:6px;margin-top:12px;}
+.cite-row{font-family:var(--mono);font-size:11.5px;color:var(--verdict-blue);word-break:break-all;}
+.cite-row::before{content:'⌗ ';color:var(--paper-dim);}
+
+.appeal-history{margin-top:20px;font-family:var(--mono);font-size:11px;color:var(--paper-dim);line-height:2;}
+
+/* ===================== LEDGER ===================== */
+.scan-bar{
+  max-width:560px;margin:20px auto 30px;display:flex;align-items:center;background:var(--ink-2);border:1px solid var(--line);
+  border-radius:6px;padding:14px 16px;gap:6px;font-family:var(--mono);font-size:13.5px;
+}
+.scan-bar .prefix{color:var(--gold);}
+.scan-bar input{flex:1;background:transparent;border:none;outline:none;color:var(--paper);font-family:var(--mono);font-size:13.5px;}
+.scan-bar input::placeholder{color:#5d5644;}
+
+.ledger-result{display:grid;grid-template-columns:220px 1fr;gap:30px;align-items:center;}
+@media (max-width:700px){.ledger-result{grid-template-columns:1fr;}}
+.runrate-row{display:flex;justify-content:space-between;font-family:var(--mono);font-size:12.5px;padding:7px 0;border-bottom:1px solid var(--line);}
+.runrate-row .lbl{color:var(--paper-dim);letter-spacing:.6px;}
+.weighted-line{font-family:var(--mono);font-size:10.5px;color:var(--paper-dim);margin-top:12px;line-height:1.7;}
+
+.subject-table{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:12px;margin-top:10px;}
+.subject-table th{text-align:left;padding:9px 10px;font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--paper-dim);border-bottom:1px double var(--line);}
+.subject-table td{padding:10px 10px;border-bottom:1px solid var(--line);}
+.subject-table tr{cursor:pointer;}
+.subject-table tr:hover{background:var(--ink-2);}
+
+/* ===================== PROTOCOL ===================== */
+.pillar-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;margin-top:24px;}
+@media (max-width:900px){.pillar-grid{grid-template-columns:1fr;}}
+.pillar h3{font-family:var(--serif);font-size:19px;margin:4px 0 10px;}
+.pillar p{font-size:13px;line-height:1.65;color:var(--paper-dim);}
+
+.tax-table{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:12px;margin-top:16px;}
+.tax-table th{text-align:left;padding:9px 10px;font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--paper-dim);border-bottom:1px double var(--line);}
+.tax-table td{padding:10px 10px;border-bottom:1px solid var(--line);}
+
+.faq-item{border-bottom:1px solid var(--line);}
+.faq-q{width:100%;text-align:left;background:transparent;border:none;color:var(--paper);font-family:var(--serif);font-size:16px;
+  padding:16px 0;display:flex;justify-content:space-between;align-items:center;}
+.faq-q::after{content:'+';color:var(--gold);font-family:var(--mono);font-size:18px;transition:transform .2s;}
+.faq-item.open .faq-q::after{transform:rotate(45deg);}
+.faq-a{max-height:0;overflow:hidden;transition:max-height .25s ease;}
+.faq-item.open .faq-a{max-height:200px;}
+.faq-a p{font-size:13px;color:var(--paper-dim);line-height:1.6;padding-bottom:16px;margin:0;}
+
+.decision-tree{margin-top:20px;}
+
+footer.site-footer{
+  border-top:1px double var(--line);padding:22px 40px;font-family:var(--mono);font-size:10px;letter-spacing:1px;
+  text-transform:uppercase;color:var(--paper-dim);display:flex;flex-wrap:wrap;gap:14px;justify-content:space-between;
+}
+footer.site-footer a{text-decoration:none;border-bottom:1px dotted var(--line);}
+
+.section-title{font-family:var(--serif);font-size:26px;font-weight:560;margin:0 0 4px;}
+.section-sub{font-family:var(--mono);font-size:11px;color:var(--paper-dim);letter-spacing:.6px;margin:0 0 4px;}
+
+.empty-state{padding:60px 20px;text-align:center;font-family:var(--mono);color:var(--paper-dim);font-size:13px;letter-spacing:.6px;}
+</style>
+</head>
+<body>
+<svg id="grain" xmlns="http://www.w3.org/2000/svg">
+  <filter id="noiseF"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" stitchTiles="stitch"/></filter>
+  <rect width="100%" height="100%" filter="url(#noiseF)"/>
+</svg>
+
+<div id="app">
+  <aside id="rail"></aside>
+  <div id="main">
+    <div id="topbar"></div>
+    <div id="ticker" class="ticker-wrap"></div>
+    <main id="content"></main>
+    <footer class="site-footer">
+      <span>OATH — CLAIM VERIFICATION PROTOCOL</span>
+      <span>INTELLIGENT CONTRACTS ON GENLAYER · BUILD ON BRADBURY TESTNET</span>
+      <span>CONTRACT 0x8F31…C41A</span>
+      <span><a href="#/protocol">DOCS</a> · <a href="#" onclick="return false">GITHUB</a> · <a href="#" onclick="return false">X</a></span>
+    </footer>
+  </div>
+</div>
+<div class="demo-badge"><span class="pip"></span> DEMO — OFFLINE RECORDS</div>
+
+<script>
+/* ============================================================
+   DESIGN TOKENS / ICONS
+   ============================================================ */
+const VERDICT_LABEL = {0:'NONE',1:'VERIFIED',2:'PARTIALLY VERIFIED',3:'CONTRADICTED',4:'UNVERIFIABLE'};
+const VERDICT_CLASS = {0:'verdict-0',1:'verdict-1',2:'verdict-2',3:'verdict-3',4:'verdict-4'};
+const VERDICT_COLOR = {0:'var(--paper-dim)',1:'var(--verdict-green)',2:'var(--verdict-amber)',3:'var(--seal-red)',4:'var(--verdict-blue)'};
+
+const TYPES = [
+  {id:'audit', label:'Audit / security', icon:'shield'},
+  {id:'agent', label:'Agent capability', icon:'node'},
+  {id:'tokenomics', label:'Airdrop / tokenomics', icon:'coins'},
+  {id:'team', label:'Team & docs', icon:'group'},
+  {id:'compliance', label:'Compliance / green', icon:'leaf'},
+  {id:'reputation', label:'Reputation dispute', icon:'scales'},
+];
+
+const ICONS = {
+  shield:'<path d="M8 1 2 3v4c0 4 2.6 6.4 6 8 3.4-1.6 6-4 6-8V3L8 1Z"/>',
+  node:'<circle cx="8" cy="3" r="1.6"/><circle cx="3" cy="12" r="1.6"/><circle cx="13" cy="12" r="1.6"/><path d="M8 4.6V9M8 9 4 11M8 9l4 2"/>',
+  coins:'<ellipse cx="6" cy="5" rx="4.5" ry="2.2"/><path d="M1.5 5v3c0 1.2 2 2.2 4.5 2.2S10.5 9.2 10.5 8V5"/><ellipse cx="10" cy="10" rx="4.5" ry="2.2"/><path d="M5.5 10v1.6c0 1.2 2 2.2 4.5 2.2s4.5-1 4.5-2.2V10"/>',
+  group:'<circle cx="5.5" cy="5" r="2.2"/><circle cx="11" cy="6" r="1.8"/><path d="M1.4 14c0-2.6 1.9-4.4 4.1-4.4s4.1 1.8 4.1 4.4M10 9.6c1.9.2 3.5 1.8 3.6 3.4"/>',
+  leaf:'<path d="M3 13C2 7 6 2 13 2c0 7-5 11-10 11Z"/><path d="M3 13c1.5-3 4-5.5 7.5-7"/>',
+  scales:'<path d="M8 2v12M4 4h8M4 4 1.5 9a2.5 2.5 0 0 0 5 0L4 4Zm8 0 2.5 5a2.5 2.5 0 0 1-5 0L12 4Z"/><path d="M5 14h6"/>',
+};
+function icon(name){return `<svg viewBox="0 0 16 16" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">${ICONS[name]}</svg>`;}
+
+/* ============================================================
+   DEMO DATA
+   ============================================================ */
+const now = Date.now();
+const hrs = h => new Date(now - h*3600*1000).toISOString();
+const days = d => new Date(now - d*86400*1000).toISOString();
+
+const SUBJECTS = ['arbswap.io','defiplatform.xyz','agent-oracle-7','greenlogistics.na','nova-token.xyz','chainpilot.dev'];
+
+let CASES = [
+  {id:1,subject:'arbswap.io',type:'audit',claim:"ArbSwap's core AMM contracts were audited by CertiK in March 2026 and the report is publicly available.",
+   evidence:['https://certik.com/projects/arbswap','https://arbswap.io/audit','https://arbswap.io/docs/security'],
+   stake:10, status:'FINAL', verdict:1, confidence:88, appeals:0, filed:days(6),
+   rationale:'The CertiK registry lists ArbSwap under active engagements with a matching report hash. The published audit PDF resolves and references the same contract addresses deployed on mainnet. Two of three jurors independently confirmed the auditor signature.',
+   citations:['https://certik.com/projects/arbswap','https://arbswap.io/audit'],
+   exStatus:[200,200,200]},
+
+  {id:2,subject:'defiplatform.xyz',type:'audit',claim:"This platform's contracts were audited by CertiK in May 2026 and the audit is public.",
+   evidence:['https://certik.com/projects/defiplatform','https://defiplatform.xyz/audit-report.pdf'],
+   stake:10, status:'VERDICTED', verdict:3, confidence:93, appeals:1, filed:days(9),
+   rationale:'The cited audit URL returns HTTP 404 and the auditor\'s public registry shows no engagement for this project. The auditor\'s published client list omits the project entirely. The claim is contradicted by the authoritative registry.',
+   citations:['https://certik.com/projects/defiplatform'],
+   exStatus:[404,200]},
+
+  {id:3,subject:'agent-oracle-7',type:'agent',claim:'Agent Oracle-7 has completed over 4,000 automated tasks with a 97% success rate on the public task log.',
+   evidence:['https://agenthub.xyz/agents/oracle-7/log','https://agenthub.xyz/agents/oracle-7/stats'],
+   stake:10, status:'VERDICTED', verdict:2, confidence:61, appeals:0, filed:days(3),
+   rationale:'The public log confirms roughly 3,150 completed tasks, short of the claimed 4,000. The recorded success rate of 91% is close to, but does not match, the claimed 97%. The volume claim is overstated while the general capability claim holds.',
+   citations:['https://agenthub.xyz/agents/oracle-7/log','https://agenthub.xyz/agents/oracle-7/stats'],
+   exStatus:[200,200]},
+
+  {id:4,subject:'greenlogistics.na',type:'compliance',claim:'GreenLogistics holds an active ISO 14001 environmental certification, renewed in 2026.',
+   evidence:['https://iso-cert-database.org/lookup/greenlogistics'],
+   stake:10, status:'VERDICTED', verdict:4, confidence:0, appeals:0, filed:hrs(14), lastError:'certificate database timeout after 3 retries',
+   rationale:'The certificate database endpoint could not be reached across three retries (connection timeout). No alternate public registry entry was located for this subject. The claim cannot be adjudicated without reachable evidence.',
+   citations:[],
+   exStatus:['ERR']},
+
+  {id:5,subject:'nova-token.xyz',type:'tokenomics',claim:'NOVA token allocation caps team holdings at 12% with a 24-month linear vesting schedule.',
+   evidence:['https://nova-token.xyz/tokenomics','https://etherscan.io/token/nova-allocations'],
+   stake:10, status:'FINAL', verdict:1, confidence:91, appeals:0, filed:days(11),
+   rationale:'The on-chain allocation table shows team wallets holding 11.8% of total supply, consistent with the claimed cap. Vesting contract bytecode confirms a 730-day linear unlock schedule matching the stated 24 months.',
+   citations:['https://etherscan.io/token/nova-allocations'],
+   exStatus:[200,200]},
+
+  {id:6,subject:'chainpilot.dev',type:'reputation',claim:'A former contractor alleges ChainPilot misrepresented its audit status; ChainPilot disputes this and has published a rebuttal.',
+   evidence:['https://chainpilot.dev/rebuttal','https://certik.com/projects/chainpilot'],
+   stake:10, status:'APPEALING', verdict:1, confidence:71, appeals:1, filed:days(4),
+   rationale:'The registry confirms an active CertiK engagement matching the dates in ChainPilot\'s rebuttal. The original allegation cites an outdated audit snapshot predating the current engagement. The rebuttal is substantiated by the current registry record.',
+   citations:['https://certik.com/projects/chainpilot','https://chainpilot.dev/rebuttal'],
+   exStatus:[200,200],
+   appealLog:[{n:1,date:days(1),note:'RE-JURIED — verdict upheld (VERIFIED, 71%)'}]},
+
+  {id:7,subject:'arbswap.io',type:'team',claim:"ArbSwap's core team is publicly doxxed with verifiable LinkedIn and GitHub histories.",
+   evidence:['https://github.com/arbswap','https://arbswap.io/team'],
+   stake:10, status:'FINAL', verdict:1, confidence:84, appeals:0, filed:days(20),
+   rationale:'GitHub organization membership matches the four names listed on the team page, each with commit histories predating the project launch. LinkedIn profiles cross-reference consistent employment history.',
+   citations:['https://github.com/arbswap'],
+   exStatus:[200,200]},
+
+  {id:8,subject:'nova-token.xyz',type:'reputation',claim:'A community member claims NOVA\'s liquidity was quietly removed in July 2026.',
+   evidence:['https://etherscan.io/address/nova-lp','https://nova-token.xyz/statement'],
+   stake:10, status:'VERDICTED', verdict:3, confidence:96, appeals:0, filed:days(2),
+   rationale:'On-chain records show the LP token balance for the flagged pool unchanged since deployment. The cited transaction hash in the allegation does not correspond to any liquidity-removal event. The claim is contradicted by the ledger.',
+   citations:['https://etherscan.io/address/nova-lp'],
+   exStatus:[200,200]},
+
+  {id:9,subject:'agent-oracle-7',type:'compliance',claim:'Agent Oracle-7\'s operator is registered under the EU AI Act transparency registry.',
+   evidence:['https://eu-ai-registry.europa.eu/lookup/oracle-7'],
+   stake:10, status:'FINAL', verdict:4, confidence:0, appeals:0, filed:days(15),
+   rationale:'The registry lookup returns no matching entry for this operator ID under any spelling variant tested. No archived snapshot of a prior listing was found. The claim cannot be verified against the cited registry.',
+   citations:[],
+   exStatus:[404]},
+
+  {id:10,subject:'greenlogistics.na',type:'audit',claim:'GreenLogistics\' emissions reporting was independently audited by SGS in Q1 2026.',
+   evidence:['https://sgs.com/verify/greenlogistics','https://greenlogistics.na/report-q1.pdf'],
+   stake:10, status:'FINAL', verdict:2, confidence:58, appeals:0, filed:days(17),
+   rationale:'SGS confirms an engagement, but the published scope covers only warehouse operations, not the fleet emissions figures cited in the claim. The audit exists but does not fully support the scope of the claim as stated.',
+   citations:['https://sgs.com/verify/greenlogistics'],
+   exStatus:[200,200]},
+
+  {id:11,subject:'chainpilot.dev',type:'agent',claim:'ChainPilot\'s routing agent maintains sub-200ms median latency across all supported chains.',
+   evidence:['https://chainpilot.dev/status','https://status.chainpilot.dev/history'],
+   stake:10, status:'PENDING', verdict:0, confidence:0, appeals:0, filed:hrs(2),
+   rationale:'', citations:[], exStatus:[200,200]},
+
+  {id:12,subject:'defiplatform.xyz',type:'tokenomics',claim:'DeFiPlatform\'s treasury wallet is multi-sig with 5 of 7 independent signers.',
+   evidence:['https://etherscan.io/address/dfp-treasury','https://defiplatform.xyz/governance'],
+   stake:10, status:'FINAL', verdict:1, confidence:79, appeals:0, filed:days(25),
+   rationale:'On-chain contract inspection confirms a Gnosis Safe configured for 5-of-7 signing, matching the claim. Five of the seven listed signer addresses have independent transaction histories predating this treasury.',
+   citations:['https://etherscan.io/address/dfp-treasury'],
+   exStatus:[200,200]},
+
+  {id:13,subject:'arbswap.io',type:'compliance',claim:'ArbSwap has completed KYC/AML screening through Chainalysis for its fiat on-ramp partner.',
+   evidence:['https://arbswap.io/compliance'],
+   stake:10, status:'FINAL', verdict:2, confidence:64, appeals:0, filed:days(30),
+   rationale:'The compliance page references a Chainalysis integration for the on-ramp partner, consistent with the claim, but provides no verifiable attestation ID to cross-check independently. Partial support on the available evidence.',
+   citations:['https://arbswap.io/compliance'],
+   exStatus:[200]},
+
+  {id:14,subject:'nova-token.xyz',type:'team',claim:'NOVA\'s lead developer previously shipped two audited protocols under a different project name.',
+   evidence:['https://github.com/nova-lead','https://certik.com/projects/prior-protocol'],
+   stake:10, status:'FINAL', verdict:1, confidence:82, appeals:0, filed:days(33),
+   rationale:'Commit signatures on the prior protocol\'s repository match the key currently used by NOVA\'s lead developer account. Both prior engagements appear in the auditor\'s public registry under the stated project names.',
+   citations:['https://github.com/nova-lead','https://certik.com/projects/prior-protocol'],
+   exStatus:[200,200]},
+];
+
+function subjectScore(subject){
+  const cs = CASES.filter(c=>c.subject===subject && c.status!=='PENDING');
+  if(cs.length===0) return {subject, totalVerdicts:0, verified:0, partial:0, contradicted:0, unverifiable:0, score:50, lastVerdict:'NONE'};
+  let v=0,p=0,c=0,u=0;
+  cs.forEach(k=>{ if(k.verdict===1)v++; else if(k.verdict===2)p++; else if(k.verdict===3)c++; else if(k.verdict===4)u++; });
+  const weighted = v*1 + p*0.5 + u*0.25 + c*0;
+  const score = Math.round((weighted/cs.length)*100);
+  const last = cs.slice().sort((a,b)=>new Date(b.filed)-new Date(a.filed))[0];
+  return {subject, totalVerdicts:cs.length, verified:v, partial:p, contradicted:c, unverifiable:u, score, lastVerdict:VERDICT_LABEL[last.verdict]};
+}
+
+function stats(){
+  return {
+    claimsFiled: CASES.length,
+    claimsAdjudicated: CASES.filter(c=>c.status!=='PENDING').length,
+    claimsContradicted: CASES.filter(c=>c.verdict===3).length,
+    treasury: (CASES.length*0.5).toFixed(2),
+  };
+}
+
+function timeAgo(iso){
+  const diff = (now - new Date(iso).getTime())/1000;
+  if(diff < 3600) return Math.round(diff/60)+'m ago';
+  if(diff < 86400) return Math.round(diff/3600)+'h ago';
+  return Math.round(diff/86400)+'d ago';
+}
+function utc(iso){
+  const d = new Date(iso);
+  return d.toISOString().slice(11,19)+' UTC';
+}
+function dateShort(iso){ return new Date(iso).toISOString().slice(0,10); }
+
+/* ============================================================
+   COMPONENTS
+   ============================================================ */
+function Stamp(verdictCode, {mini=false, landing=false}={}){
+  const cls = `stamp ${mini?'mini':''} ${VERDICT_CLASS[verdictCode]} ${landing?'landing':''}`;
+  return `<span class="${cls}">${VERDICT_LABEL[verdictCode]}</span>`;
+}
+
+function sealBand(score){
+  if(score===50) return {color:'var(--paper-dim)', label:'NO DATA'};
+  if(score>=70) return {color:'var(--verdict-green)', label:'TRUSTED'};
+  if(score>=40) return {color:'var(--verdict-amber)', label:'MIXED'};
+  return {color:'var(--seal-red)', label:'FLAGGED'};
+}
+
+function seed(str){ let h=0; for(let i=0;i<str.length;i++){h=(h*31+str.charCodeAt(i))>>>0;} return h; }
+
+function SealScore(subject, score, size=96){
+  const band = sealBand(score);
+  const r = size/2 - 8;
+  const cx = size/2, cy = size/2;
+  const pts = 14;
+  let path = '';
+  const rnd = seed(subject+score);
+  for(let i=0;i<=pts;i++){
+    const a = (i/pts)*Math.PI*2;
+    const wob = ((rnd>>(i%20)) % 5) - 2;
+    const rr = r + (score===50?0:wob*0.8);
+    const x = cx + rr*Math.cos(a), y = cy + rr*Math.sin(a);
+    path += (i===0?'M':'L') + x.toFixed(1)+','+y.toFixed(1)+' ';
+  }
+  const fs = size*0.30;
+  return `
+  <div class="seal-wrap">
+    <svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
+      <path d="${path}Z" fill="none" stroke="${band.color}" stroke-width="2.5"/>
+      <circle cx="${cx}" cy="${cy}" r="${r-9}" fill="none" stroke="${band.color}" stroke-width="1" opacity=".5"/>
+      <text x="${cx}" y="${cy+fs*0.33}" text-anchor="middle" fill="${band.color}" font-family="Fraunces" font-size="${fs}" font-weight="680">${score===50?'—':score}</text>
+    </svg>
+    <div class="seal-band-label" style="color:${band.color}">${band.label}</div>
+  </div>`;
+}
+
+function DocketRow(c){
+  const sc = subjectScore(c.subject);
+  return `<tr onclick="location.hash='#/case/${c.id}'">
+    <td data-label="#"><span class="case-id">#${String(c.id).padStart(4,'0')}</span></td>
+    <td data-label="Subject" class="subj-cell">${c.subject}</td>
+    <td data-label="Type"><span style="font-size:10.5px;letter-spacing:.6px;color:var(--paper-dim);text-transform:uppercase">${TYPES.find(t=>t.id===c.type).label}</span></td>
+    <td data-label="Status"><span class="status-txt" style="color:${c.status==='PENDING'?'var(--paper-dim)':'var(--paper)'}">${c.status}</span></td>
+    <td data-label="Verdict">${c.status==='PENDING'?'<span style="color:var(--paper-dim)">—</span>':Stamp(c.verdict,{mini:true})}</td>
+    <td data-label="Confidence" class="conf-cell" style="color:${c.confidence? (c.confidence>=70?'var(--verdict-green)':c.confidence>=40?'var(--verdict-amber)':'var(--seal-red)') : 'var(--paper-dim)'}">${c.confidence?c.confidence+'%':'—'}</td>
+    <td data-label="Filed">${utc(c.filed)}</td>
+    <td data-label="Stake">${c.stake.toFixed(2)} GEN</td>
+    <td class="arrow-cell">open case →</td>
+  </tr>`;
+}
+
+function ExhibitPin(url, status, idx){
+  const ok = status===200;
+  const err = status==='ERR';
+  const statusText = err ? 'error · timeout' : ok ? 'fetched · 200' : `dead · ${status}`;
+  const statusColor = err ? 'var(--seal-red)' : ok ? 'var(--verdict-green)' : 'var(--seal-red)';
+  const previews = [
+    "SPDX-License-Identifier: MIT // pragma solidity ^0.8.20; contract Registry { mapping(address => Report) public reports; event Filed(uint256 indexed id, address...",
+    "audit report — engagement #A-2291, scope: core AMM, staking, treasury multisig. Findings: 2 low, 0 critical. Signed 2026-03-11...",
+    "404 Not Found — nginx/1.24 — the requested resource could not be located on this server...",
+  ];
+  return `<div class="exhibit-pin">
+    <div class="ex-url">${url}</div>
+    <div class="ex-status" style="color:${statusColor};border-color:${statusColor}55">${statusText}</div>
+    <div class="ex-preview">${err? 'connection timeout after 3 retries — no content retrieved' : previews[idx%previews.length]}</div>
+  </div>`;
+}
+
+/* ============================================================
+   RAIL / NAV / TICKER
+   ============================================================ */
+const NAVS = [
+  {href:'#/preflight', label:'Pre-flight'},
+  {href:'#/docket', label:'Docket'},
+  {href:'#/ledger', label:'Trust ledger'},
+  {href:'#/protocol', label:'Protocol'},
+];
+
+function renderRail(){
+  const s = stats();
+  document.getElementById('rail').innerHTML = `
+    <div class="brand">
+      <div class="brand-mark">OATH<span>.</span></div>
+      <div class="brand-tag">Every claim faces a jury</div>
+    </div>
+    <nav class="navlist">
+      ${NAVS.map(n=>`<a class="navitem ${isActive(n.href)?'active':''}" href="${n.href}"><span class="dot"></span>${n.label}</a>`).join('')}
+    </nav>
+    <div class="rail-stats">
+      <div class="rail-stat-row"><span class="k">Cases filed</span><span class="v">${s.claimsFiled}</span></div>
+      <div class="rail-stat-row"><span class="k">Adjudicated</span><span class="v">${s.claimsAdjudicated}</span></div>
+      <div class="rail-stat-row"><span class="k">Contradicted</span><span class="v" style="color:var(--seal-red)">${s.claimsContradicted}</span></div>
+      <div class="rail-stat-row"><span class="k">Treasury</span><span class="v">${s.treasury} GEN</span></div>
+    </div>
+    <div class="rail-seal">
+      <div class="rail-seal-label">Seal of the day</div>
+      ${SealScore('nova-token.xyz', subjectScore('nova-token.xyz').score, 84)}
+    </div>
+  `;
+  document.getElementById('topbar').innerHTML = `
+    <div class="brand-mark">OATH<span>.</span></div>
+    <select onchange="location.hash=this.value">
+      ${NAVS.map(n=>`<option value="${n.href}" ${isActive(n.href)?'selected':''}>${n.label}</option>`).join('')}
+    </select>
+  `;
+}
+function isActive(href){
+  const h = location.hash || '#/preflight';
+  if(href==='#/preflight') return h.startsWith('#/preflight') || h==='' || h==='#/';
+  return h.startsWith(href);
+}
+
+function renderTicker(){
+  const items = CASES.filter(c=>c.status!=='PENDING').slice().sort((a,b)=>new Date(b.filed)-new Date(a.filed))
+    .map(c=>`<span class="ticker-item">◈ <b style="color:${VERDICT_COLOR[c.verdict]}">${VERDICT_LABEL[c.verdict]}</b> · ${utc(c.filed)} · ${c.subject}</span>`).join('');
+  document.getElementById('ticker').innerHTML = `<div class="ticker-track">${items}${items}</div>`;
+}
+
+/* ============================================================
+   SCREENS
+   ============================================================ */
+function screenPreflight(){
+  const el = document.getElementById('content');
+  el.innerHTML = `
+    <div class="demo-banner">Demo records. Deploy <b>contracts/oath_registry.py</b> in GenLayer Studio and set <b>VITE_OATH_CONTRACT</b> to go live. <a href="https://testnet-faucet.genlayer.foundation/" target="_blank">Get testnet GEN →</a></div>
+    <div class="hero-grid">
+      <div>
+        <div class="eyebrow">File a claim</div>
+        <h1 class="hero-headline">Every claim faces a jury.</h1>
+        <p class="hero-sub">OATH verifies public claims — audits, agent track records, tokenomics, compliance — by fetching the evidence and letting a decentralized jury of AI models deliver the verdict, on-chain, in minutes.</p>
+        <div class="filing-steps"><span>File a case</span><span>Present your evidence</span><span>The jury deliberates</span><span>Verdict recorded</span></div>
+
+        <form id="filingForm">
+          <label class="field-label">Subject</label>
+          <input class="field" id="f-subject" placeholder="app.defiplatform.xyz" />
+
+          <label class="field-label">The claim</label>
+          <textarea class="field" id="f-claim" placeholder="This platform's contracts were audited by CertiK in May 2026 and the audit is public."></textarea>
+
+          <label class="field-label">Exhibits <b>(up to 5)</b></label>
+          <div class="exhibit-rows" id="exRows">
+            <div class="exhibit-row"><span class="ex-label">EXHIBIT A</span><input class="field" placeholder="https://…"/></div>
+          </div>
+          <button type="button" class="ghost-btn" id="addEx">+ ADD EXHIBIT</button>
+
+          <label class="field-label">Claim type</label>
+          <div class="chip-row" id="typeChips">
+            ${TYPES.map((t,i)=>`<button type="button" class="type-chip ${i===0?'selected':''}" data-type="${t.id}">${icon(t.icon)}${t.label}</button>`).join('')}
+          </div>
+
+          <button type="submit" class="submit-btn">File case →</button>
+          <div class="stake-line">stake 10.00 GEN · refunded unless CONTRADICTED · fee 5%</div>
+        </form>
+      </div>
+
+      <div class="folder">
+        <div class="folder-tab">Case #${String(CASES.length).padStart(4,'0')}</div>
+        <div class="eyebrow" style="margin-bottom:10px">Exhibit board</div>
+        <div id="board"></div>
+      </div>
+    </div>
+  `;
+
+  const exLabels = ['A','B','C','D','E'];
+  document.getElementById('addEx').onclick = ()=>{
+    const rows = document.getElementById('exRows');
+    if(rows.children.length>=5) return;
+    const n = rows.children.length;
+    const row = document.createElement('div');
+    row.className='exhibit-row';
+    row.innerHTML = `<span class="ex-label">EXHIBIT ${exLabels[n]}</span><input class="field" placeholder="https://…"/>`;
+    rows.appendChild(row);
+    row.querySelector('input').focus();
+  };
+  document.getElementById('exRows').addEventListener('keydown', e=>{
+    if(e.key==='Enter'){ e.preventDefault(); document.getElementById('addEx').click(); }
+  });
+  document.querySelectorAll('.type-chip').forEach(chip=>{
+    chip.onclick = ()=>{ document.querySelectorAll('.type-chip').forEach(c=>c.classList.remove('selected')); chip.classList.add('selected'); };
+  });
+  document.getElementById('filingForm').onsubmit = (e)=>{ e.preventDefault(); runDemoFiling(); };
+
+  playBoard(CASES[1], true); // replay defiplatform.xyz contradicted case on load
+}
+
+function playBoard(c, loop){
+  const board = document.getElementById('board');
+  if(!board) return;
+  const exStatus = c.exStatus;
+  board.innerHTML = `
+    <div class="board-item"><div class="thumb"></div><div>
+      <div class="board-item-title">Evidence fetched</div>
+      <div class="board-item-body" id="b-ex">${c.evidence.map((u,i)=>`<span class="exchip" data-i="${i}"><span class="tick">…</span> ${new URL(u).hostname}</span>`).join('')}</div>
+    </div></div>
+    <div class="board-item"><div class="thumb" style="background:var(--gold)"></div><div>
+      <div class="board-item-title">Jury deliberation</div>
+      <div class="board-item-body" id="b-jury">
+        <span class="juror-chip" data-j="claude">CLAUDE</span><span class="juror-chip" data-j="gpt">GPT</span><span class="juror-chip" data-j="gemini">GEMINI</span>
+        <div id="b-agree" style="margin-top:6px;color:var(--paper-dim);font-family:var(--mono);font-size:10.5px;"></div>
+      </div>
+    </div></div>
+    <div class="board-item"><div class="thumb" style="background:${VERDICT_COLOR[c.verdict]}"></div><div>
+      <div class="board-item-title">Verdict recorded</div>
+      <div class="board-item-body" id="b-stamp"></div>
+    </div></div>
+    <div class="board-item"><div class="thumb" style="background:var(--verdict-blue)"></div><div>
+      <div class="board-item-title">Seal updated</div>
+      <div class="board-item-body" id="b-seal" style="color:var(--paper-dim)">${c.subject} · recalculating…</div>
+    </div></div>
+  `;
+  let t=0;
+  c.evidence.forEach((u,i)=>{
+    t += 380;
+    setTimeout(()=>{
+      const el = board.querySelector(`.exchip[data-i="${i}"]`);
+      if(!el) return;
+      const ok = exStatus[i]===200;
+      el.classList.add(ok?'ok':'dead');
+      el.querySelector('.tick').textContent = ok?'✓':'✕';
+      el.innerHTML = el.innerHTML.replace('…', ok?'fetched 200 · 1.2s':`dead ${exStatus[i]}`);
+    }, t);
+  });
+  ['claude','gpt','gemini'].forEach((j,i)=>{
+    t += 260;
+    setTimeout(()=>{ const el = board.querySelector(`.juror-chip[data-j="${j}"]`); if(el) el.classList.add('lit'); }, t);
+  });
+  t += 300;
+  setTimeout(()=>{ const el = board.querySelector('#b-agree'); if(el) el.textContent = 'AGREEMENT: 2/3'; }, t);
+  t += 400;
+  setTimeout(()=>{ const el = board.querySelector('#b-stamp'); if(el) el.innerHTML = Stamp(c.verdict,{landing:true}); }, t);
+  t += 500;
+  setTimeout(()=>{ const el = board.querySelector('#b-seal'); if(el){ const sc = subjectScore(c.subject); el.style.color='var(--paper)'; el.textContent = `${c.subject} · seal now ${sc.score}`; } }, t);
+}
+
+function runDemoFiling(){
+  const subject = document.getElementById('f-subject').value.trim() || 'unknown-subject.xyz';
+  const claim = document.getElementById('f-claim').value.trim() || 'Untitled claim.';
+  const urls = [...document.querySelectorAll('#exRows input')].map(i=>i.value.trim()).filter(Boolean);
+  const type = document.querySelector('.type-chip.selected')?.dataset.type || 'audit';
+  const verdictPool = [1,2,3,4];
+  const verdict = verdictPool[Math.floor(Math.random()*verdictPool.length)];
+  const confidence = 55 + Math.floor(Math.random()*40);
+  const newCase = {
+    id: CASES.length+1, subject, type, claim,
+    evidence: urls.length?urls:['https://example.com/evidence'],
+    stake:10, status:'PENDING', verdict:0, confidence:0, appeals:0, filed:new Date().toISOString(),
+    rationale:'', citations:[], exStatus:(urls.length?urls:[1]).map(()=> Math.random()>0.25?200:404),
+  };
+  CASES.unshift(newCase);
+  document.querySelector('.folder-tab').textContent = `Case #${String(newCase.id).padStart(4,'0')}`;
+  playBoard(newCase);
+  setTimeout(()=>{
+    newCase.status='VERDICTED'; newCase.verdict=verdict; newCase.confidence=confidence;
+    newCase.rationale = 'The jury cross-referenced the submitted exhibits against public registries and on-chain records to reach this verdict.';
+    newCase.citations = newCase.evidence.slice(0,2);
+    renderRail(); renderTicker();
+  }, 2600);
+  document.getElementById('filingForm').reset();
+  document.querySelectorAll('.type-chip').forEach((c,i)=>c.classList.toggle('selected', i===0));
+  document.getElementById('exRows').innerHTML = `<div class="exhibit-row"><span class="ex-label">EXHIBIT A</span><input class="field" placeholder="https://…"/></div>`;
+}
+
+let docketSort = {key:'filed', dir:-1};
+let docketFilter = null;
+let docketSearch = '';
+
+function screenDocket(){
+  const el = document.getElementById('content');
+  el.innerHTML = `
+    <div class="eyebrow">The docket</div>
+    <h2 class="section-title" style="margin-top:6px">All cases on record</h2>
+    <div class="docket-toolbar">
+      <div class="filter-chips" id="fchips">
+        ${['VERIFIED','PARTIAL','CONTRADICTED','UNVERIFIABLE','APPEALING','PENDING'].map(v=>`<button class="fchip ${docketFilter===v?'on':''}" data-v="${v}">${v}</button>`).join('')}
+      </div>
+      <input class="search-box" id="dsearch" placeholder="search subject…" value="${docketSearch}"/>
+    </div>
+    <div style="overflow-x:auto">
+    <table class="docket">
+      <thead><tr>
+        <th data-k="id">#</th><th data-k="subject">Subject</th><th data-k="type">Type</th><th data-k="status">Status</th>
+        <th data-k="verdict">Verdict</th><th data-k="confidence">Confidence</th><th data-k="filed">Filed (UTC)</th><th data-k="stake">Stake</th><th></th>
+      </tr></thead>
+      <tbody id="docketBody"></tbody>
+    </table>
+    </div>
+  `;
+  document.querySelectorAll('.fchip').forEach(c=>c.onclick=()=>{ docketFilter = docketFilter===c.dataset.v?null:c.dataset.v; renderDocketBody(); document.querySelectorAll('.fchip').forEach(x=>x.classList.toggle('on', x.dataset.v===docketFilter)); });
+  document.getElementById('dsearch').oninput = (e)=>{ docketSearch = e.target.value; renderDocketBody(); };
+  document.querySelectorAll('table.docket thead th[data-k]').forEach(th=>th.onclick=()=>{
+    const k = th.dataset.k;
+    docketSort.dir = docketSort.key===k ? -docketSort.dir : -1;
+    docketSort.key = k;
+    renderDocketBody();
+  });
+  renderDocketBody();
+}
+function renderDocketBody(){
+  let rows = CASES.slice();
+  if(docketFilter){
+    const map = {VERIFIED:1,PARTIAL:2,CONTRADICTED:3,UNVERIFIABLE:4};
+    if(docketFilter==='APPEALING') rows = rows.filter(c=>c.status==='APPEALING');
+    else if(docketFilter==='PENDING') rows = rows.filter(c=>c.status==='PENDING');
+    else rows = rows.filter(c=>c.verdict===map[docketFilter]);
+  }
+  if(docketSearch) rows = rows.filter(c=>c.subject.toLowerCase().includes(docketSearch.toLowerCase()));
+  const key = docketSort.key, dir = docketSort.dir;
+  rows.sort((a,b)=>{
+    let av,bv;
+    if(key==='id'){av=a.id;bv=b.id;}
+    else if(key==='filed'){av=new Date(a.filed).getTime();bv=new Date(b.filed).getTime();}
+    else if(key==='confidence'){av=a.confidence;bv=b.confidence;}
+    else if(key==='stake'){av=a.stake;bv=b.stake;}
+    else {av=(a[key]||'').toString();bv=(b[key]||'').toString();}
+    if(av<bv) return -1*dir; if(av>bv) return 1*dir; return 0;
+  });
+  const body = document.getElementById('docketBody');
+  if(rows.length===0){ body.innerHTML = `<tr><td colspan="9"><div class="empty-state">The docket is empty. File the first case.</div></td></tr>`; return; }
+  body.innerHTML = rows.map(DocketRow).join('');
+}
+
+function screenCase(id){
+  const c = CASES.find(x=>x.id===id);
+  const el = document.getElementById('content');
+  if(!c){ el.innerHTML = `<div class="empty-state">Case not found.</div>`; return; }
+  const sc = subjectScore(c.subject);
+  const windowOpen = c.status==='VERDICTED';
+  el.innerHTML = `
+    <div class="folder">
+      <div class="folder-tab">Case #${String(c.id).padStart(4,'0')}</div>
+      <div class="file-header">
+        <div>
+          <h1 style="font-family:var(--serif);font-size:clamp(26px,3.4vw,38px);font-weight:560;margin:6px 0">${c.subject}</h1>
+          <div class="pull-quote ${c.verdict===3?'seal-red':'gold'}">${c.claim}</div>
+          <div class="meta-strip">
+            <span>FILED ${utc(c.filed)}</span><span>BY 0x8f3…c41</span><span>STAKE ${c.stake.toFixed(2)} GEN</span>
+            <span>TYPE ${TYPES.find(t=>t.id===c.type).label.toUpperCase()}</span>
+          </div>
+        </div>
+        <div class="sidecol">
+          ${c.status==='PENDING' ? `<div style="font-family:var(--mono);font-size:11px;color:var(--paper-dim)">ADJUDICATING…</div>` : Stamp(c.verdict)}
+          ${c.confidence?`<div class="sc-row">CONFIDENCE <b>${c.confidence}%</b></div>`:''}
+          <div class="sc-row">RECORDED ON-CHAIN — <b style="color:var(--verdict-blue)">0x91a…7fe2</b></div>
+          <div style="display:flex;align-items:center;gap:14px">
+            ${SealScore(c.subject, sc.score, 76)}
+            <div class="sc-row" style="line-height:1.7">SEAL SCORE<br>OF <b>${c.subject}</b></div>
+          </div>
+          ${windowOpen ? `<button class="action-btn" onclick="submitAppeal(${c.id})">Submit appeal — stake ×2, window closes in 6d 04h</button>`
+            : c.status==='APPEALING' ? `<button class="action-btn" disabled>APPEAL PENDING</button>`
+            : c.status==='FINAL' ? `<button class="action-btn" disabled>WINDOW CLOSED</button>` : ``}
+        </div>
+      </div>
+
+      ${c.evidence.length ? `
+      <div class="tabs" id="exTabs">
+        ${c.evidence.map((u,i)=>{
+          const ok = c.exStatus[i]===200, err=c.exStatus[i]==='ERR';
+          const col = err||!ok ? 'var(--seal-red)' : 'var(--verdict-green)';
+          return `<button class="tab-btn ${i===0?'active':''}" data-i="${i}"><span class="dot" style="background:${col}"></span>EXHIBIT ${String.fromCharCode(65+i)}</button>`;
+        }).join('')}
+      </div>
+      <div id="exBody">${ExhibitPin(c.evidence[0], c.exStatus[0], 0)}</div>
+      ` : ''}
+
+      ${c.status!=='PENDING' ? `
+      <div class="transcript-head">Jury transcript — 3 models in agreement</div>
+      <div class="transcript-body" id="transcriptBody"></div>
+      <div class="citelist">${c.citations.map(u=>`<div class="cite-row">${u}</div>`).join('')}</div>
+      ` : `<div class="transcript-head">Jury transcript</div><div class="transcript-body" style="color:var(--paper-dim)">The jury has not yet convened on this case.</div>`}
+
+      ${c.appealLog ? `<div class="appeal-history">${c.appealLog.map(a=>`L${a.n} · ${dateShort(a.date)} · ${a.note}`).join('<br>')}</div>` : ''}
+    </div>
+  `;
+  if(c.evidence.length){
+    document.querySelectorAll('#exTabs .tab-btn').forEach(b=>b.onclick=()=>{
+      document.querySelectorAll('#exTabs .tab-btn').forEach(x=>x.classList.remove('active'));
+      b.classList.add('active');
+      const i = +b.dataset.i;
+      document.getElementById('exBody').innerHTML = ExhibitPin(c.evidence[i], c.exStatus[i], i);
+    });
+  }
+  if(c.status!=='PENDING' && c.rationale) typewrite(document.getElementById('transcriptBody'), c.rationale);
+}
+function typewrite(el, text){
+  const reduced = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)').matches : false;
+  if(reduced){ el.textContent = text; return; }
+  let i=0;
+  el.textContent='';
+  const step = ()=>{
+    if(i<=text.length){ el.textContent = text.slice(0,i); i++; setTimeout(step, 16); }
+  };
+  step();
+}
+function submitAppeal(id){
+  const c = CASES.find(x=>x.id===id);
+  c.status='APPEALING'; c.appeals=(c.appeals||0)+1;
+  c.appealLog = c.appealLog||[];
+  c.appealLog.push({n:c.appeals, date:new Date().toISOString(), note:'APPEAL FILED — awaiting re-adjudication'});
+  screenCase(id);
+}
+
+function screenLedger(prefill){
+  const el = document.getElementById('content');
+  el.innerHTML = `
+    <div class="eyebrow" style="text-align:center;display:block">Trust ledger</div>
+    <h2 class="section-title" style="text-align:center">Scan any subject before you trust it.</h2>
+    <div class="scan-bar">
+      <span class="prefix">$ get_trust(</span><input id="ledgerInput" placeholder="app.defiplatform.xyz" value="${prefill||''}"/><span class="prefix">)</span>
+    </div>
+    <div id="ledgerResult"></div>
+    <h3 style="font-family:var(--serif);font-size:19px;margin-top:44px">Top subjects</h3>
+    <table class="subject-table">
+      <thead><tr><th>Subject</th><th>Verdicts</th><th>Seal</th><th>Last verdict</th></tr></thead>
+      <tbody>
+        ${SUBJECTS.map(s=>{const sc=subjectScore(s); return `<tr onclick="document.getElementById('ledgerInput').value='${s}';renderLedgerResult('${s}')">
+          <td style="font-family:var(--serif);color:var(--paper)">${s}</td><td>${sc.totalVerdicts}</td>
+          <td style="color:${sealBand(sc.score).color}">${sc.score}</td><td>${sc.lastVerdict}</td></tr>`}).join('')}
+      </tbody>
+    </table>
+  `;
+  const input = document.getElementById('ledgerInput');
+  input.addEventListener('keydown', e=>{ if(e.key==='Enter') renderLedgerResult(input.value.trim()); });
+  if(prefill) renderLedgerResult(prefill);
+}
+function renderLedgerResult(subject){
+  const box = document.getElementById('ledgerResult');
+  if(!subject){ box.innerHTML=''; return; }
+  const sc = subjectScore(subject);
+  if(sc.totalVerdicts===0){
+    box.innerHTML = `<div class="folder" style="margin-top:26px;text-align:center">
+      ${SealScore(subject, 50, 110)}
+      <div style="font-family:var(--mono);font-size:11px;letter-spacing:.8px;color:var(--paper-dim);margin-top:14px">
+        NO VERDICTS ON RECORD.<br>50 = NEUTRAL. TRUST NOTHING UNVERIFIED.
+      </div>
+    </div>`;
+    return;
+  }
+  const hist = CASES.filter(c=>c.subject===subject).sort((a,b)=>new Date(b.filed)-new Date(a.filed));
+  box.innerHTML = `
+    <div class="folder">
+      <div class="folder-tab">${subject}</div>
+      <div class="ledger-result">
+        ${SealScore(subject, sc.score, 130)}
+        <div>
+          <div class="runrate-row"><span class="lbl">VERIFIED</span><span style="color:var(--verdict-green)">${sc.verified}</span></div>
+          <div class="runrate-row"><span class="lbl">PARTIAL</span><span style="color:var(--verdict-amber)">${sc.partial}</span></div>
+          <div class="runrate-row"><span class="lbl">CONTRADICTED</span><span style="color:var(--seal-red)">${sc.contradicted}</span></div>
+          <div class="runrate-row"><span class="lbl">UNVERIFIABLE</span><span style="color:var(--verdict-blue)">${sc.unverifiable}</span></div>
+          <div class="weighted-line">SCORE ${sc.score}/100 · WEIGHTED — VERIFIED 1.0 · PARTIAL 0.5 · UNVERIFIABLE 0.25 · CONTRADICTED 0.0</div>
+        </div>
+      </div>
+      <h4 style="font-family:var(--mono);font-size:10.5px;letter-spacing:1.2px;text-transform:uppercase;color:var(--paper-dim);margin-top:26px">History</h4>
+      <table class="docket" style="margin-top:8px"><tbody>
+        ${hist.map(c=>`<tr onclick="location.hash='#/case/${c.id}'">
+          <td data-label="#"><span class="case-id">#${String(c.id).padStart(4,'0')}</span></td>
+          <td data-label="Type" style="text-transform:uppercase;font-size:10.5px;color:var(--paper-dim)">${TYPES.find(t=>t.id===c.type).label}</td>
+          <td data-label="Verdict">${c.status==='PENDING'?'—':Stamp(c.verdict,{mini:true})}</td>
+          <td data-label="When">${timeAgo(c.filed)}</td>
+        </tr>`).join('')}
+      </tbody></table>
+    </div>
+  `;
+}
+
+function screenProtocol(){
+  const el = document.getElementById('content');
+  el.innerHTML = `
+    <div class="eyebrow">Protocol</div>
+    <h2 class="section-title" style="margin-top:6px">How a claim becomes a record</h2>
+    <div class="pillar-grid">
+      <div class="folder pillar"><div class="folder-tab">Exhibit 1</div><h3>The fetch</h3>
+        <p>The contract reaches out to the evidence URLs itself, natively, at adjudication time. You cannot doctor what the jury sees — it reads the live page, not a screenshot you submitted.</p></div>
+      <div class="folder pillar"><div class="folder-tab">Exhibit 2</div><h3>The jury</h3>
+        <p>A leader model drafts a verdict; validator models independently check it against the same evidence. Diverse model families, judgment rather than keyword matching, resolved by the Equivalence Principle.</p></div>
+      <div class="folder pillar"><div class="folder-tab">Exhibit 3</div><h3>The record</h3>
+        <p>Stake is posted, the verdict is written on-chain, and either party may appeal at ×2 stake, then ×4. The window closes after 7 days; after that, the record is final.</p></div>
+    </div>
+
+    <h3 style="font-family:var(--serif);font-size:20px;margin-top:44px">How a verdict is reached</h3>
+    <div class="decision-tree">${decisionTreeSVG()}</div>
+
+    <h3 style="font-family:var(--serif);font-size:20px;margin-top:44px">Verdict taxonomy</h3>
+    <table class="tax-table">
+      <thead><tr><th>Verdict</th><th>Meaning</th><th>Stake consequence</th></tr></thead>
+      <tbody>
+        <tr><td style="color:var(--verdict-green)">VERIFIED</td><td>The evidence held up.</td><td>Stake refunded.</td></tr>
+        <tr><td style="color:var(--verdict-amber)">PARTIALLY VERIFIED</td><td>Half the story checks out.</td><td>Stake refunded.</td></tr>
+        <tr><td style="color:var(--seal-red)">CONTRADICTED</td><td>The evidence says otherwise.</td><td>Stake forfeited to treasury.</td></tr>
+        <tr><td style="color:var(--verdict-blue)">UNVERIFIABLE</td><td>The links went nowhere.</td><td>Stake refunded, minus fee.</td></tr>
+      </tbody>
+    </table>
+
+    <h3 style="font-family:var(--serif);font-size:20px;margin-top:44px">Questions on the record</h3>
+    <div id="faq"></div>
+  `;
+  const faqs = [
+    ['What counts as evidence?','Any URL the contract can reach and read at adjudication time — registry pages, reports, on-chain explorers, dashboards. If the jury cannot fetch it, it cannot verify it.'],
+    ['Who pays?','The filer stakes GEN when filing. Stake is refunded unless the claim is CONTRADICTED, in which case it moves to the treasury minus the protocol fee.'],
+    ['Can verdicts be appealed?','Yes, twice. The first appeal costs ×2 the original stake, the second ×4. Each appeal triggers re-adjudication by a fresh jury within the 7-day window.'],
+    ['What is the seal?','A subject\'s trust score, 0–100, computed from the weighted history of its verdicts. A score of 50 means no verdicts exist yet — not a middling record.'],
+    ['Is this a court?','No. It\'s a protocol. You bring the claim.'],
+  ];
+  document.getElementById('faq').innerHTML = faqs.map((f,i)=>`
+    <div class="faq-item" data-i="${i}">
+      <button class="faq-q">${f[0]}</button>
+      <div class="faq-a"><p>${f[1]}</p></div>
+    </div>`).join('');
+  document.querySelectorAll('.faq-item').forEach(item=>{
+    item.querySelector('.faq-q').onclick = ()=>item.classList.toggle('open');
+  });
+}
+function decisionTreeSVG(){
+  return `<svg viewBox="0 0 720 200" style="width:100%;height:auto" stroke="var(--line)" stroke-width="1.4" fill="none">
+    <g font-family="IBM Plex Mono" font-size="10.5" fill="var(--paper-dim)" stroke="none">
+      <text x="10" y="34">CLAIM FILED</text>
+      <text x="160" y="34">EVIDENCE REACHABLE?</text>
+      <text x="380" y="14">NO</text>
+      <text x="380" y="94">CONTRADICTS CLAIM?</text>
+      <text x="560" y="74">YES</text>
+      <text x="560" y="154">FULLY SUPPORTS?</text>
+    </g>
+    <g font-family="IBM Plex Mono" font-size="10.5" font-weight="600">
+      <text x="380" y="50" fill="var(--verdict-blue)">→ UNVERIFIABLE</text>
+      <text x="560" y="110" fill="var(--seal-red)">→ CONTRADICTED</text>
+      <text x="560" y="190" fill="var(--verdict-green)">→ VERIFIED</text>
+      <text x="380" y="190" fill="var(--verdict-amber)">→ PARTIALLY VERIFIED</text>
+    </g>
+    <path d="M90 28 H150"/>
+    <path d="M280 28 H370 M280 28 V40" stroke-dasharray="3 3"/>
+    <path d="M280 40 V88 H370" />
+    <path d="M470 88 H540 M470 88 V100" stroke-dasharray="3 3"/>
+    <path d="M470 100 V150 H540"/>
+  </svg>`;
+}
+
+/* ============================================================
+   ROUTER
+   ============================================================ */
+function route(){
+  const h = location.hash || '#/preflight';
+  renderRail();
+  window.scrollTo(0,0);
+  if(h.startsWith('#/case/')){
+    screenCase(parseInt(h.split('/')[2]));
+  } else if(h.startsWith('#/docket')){
+    screenDocket();
+  } else if(h.startsWith('#/ledger')){
+    const parts = h.split('/');
+    screenLedger(parts[2]?decodeURIComponent(parts[2]):null);
+  } else if(h.startsWith('#/protocol')){
+    screenProtocol();
+  } else {
+    screenPreflight();
+  }
+}
+window.addEventListener('hashchange', route);
+renderTicker();
+route();
+</script>
+</body>
+</html>
