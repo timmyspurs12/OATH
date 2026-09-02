@@ -459,11 +459,16 @@ const VERDICT_COLOR = {0:'var(--paper-dim)',1:'var(--verdict-green)',2:'var(--ve
 let SDK = null;
 async function loadSDK(){
   if(SDK) return SDK;
-  const [gl, types] = await Promise.all([
+  // Chains are exported ONLY from the `genlayer-js/chains` subpath (not the
+  // main entry) — import them explicitly or createClient falls back to its
+  // default chain (localnet at http://127.0.0.1:4000), which is unreachable
+  // in a normal browser.
+  const [gl, chains, types] = await Promise.all([
     import('https://esm.sh/genlayer-js@1.1.8'),
+    import('https://esm.sh/genlayer-js@1.1.8/chains'),
     import('https://esm.sh/genlayer-js@1.1.8/types'),
   ]);
-  SDK = { ...gl, ...types };
+  SDK = { ...gl, ...chains, ...types };
   return SDK;
 }
 
@@ -512,7 +517,7 @@ function num(v){ if(v==null) return 0; if(typeof v==='bigint') return Number(v);
 function fmtGEN(wei){ return (Number(BigInt(num(wei)))/1e18).toFixed(2) + ' GEN'; }
 function shortAddr(a){ if(!a) return '—'; return a.slice(0,6)+'…'+a.slice(-4); }
 
-async function readView(functionName, args=[], tries=3){
+async function readView(functionName, args=[], tries=5){
   const { readClient, address } = STATE;
   if(!readClient || !address) throw new Error('no contract');
   let lastErr;
@@ -521,24 +526,29 @@ async function readView(functionName, args=[], tries=3){
       return await readClient.readContract({ address, functionName, args, stateStatus: 'accepted' });
     } catch(e){
       lastErr = e;
-      // genuine "no such claim" => stop immediately (caller ends discovery)
-      const m = String(e?.message||e);
-      if(/claim not found|Missing or invalid parameters|execution failed|not found at address/i.test(m)) throw e;
-      // transient RPC/network error => back off and retry
-      await new Promise(r=>setTimeout(r, 700*(i+1)));
+      // A contract-level rejection (claim not found etc.) is deterministic —
+      // do NOT retry; the discovery loop treats it as the end of the docket.
+      if(!isNetworkError(e)) throw e;
+      // transient RPC/network error ("fetch failed") => back off and retry.
+      await new Promise(r=>setTimeout(r, 800*(i+1)));
     }
   }
   throw lastErr;
 }
-// A failed read is a connectivity/contract problem, NOT the end of the docket.
+// Connectivity problems only — a genuine "claim not found" UserError is NOT a
+// network error even though the SDK wraps it as a failed gen_call.
 function isNetworkError(e){
-  const m = String(e?.message||e);
-  return !/claim not found|Missing or invalid parameters|execution failed|not found at address/i.test(m);
+  const m = String(e?.message||e).toLowerCase();
+  const contractRejection =
+    /claim not found|missing or invalid parameters|not found at address|stake too low|only .* can|must be|max appeals|appeal window|nothing to finalize|already /.test(m);
+  if(contractRejection) return false;
+  return /fetch|network|networkerror|timeout|failed to fetch|connection|econnrefused|server unreachable|load failed/.test(m);
 }
 
 function sdkChainFor(sdk, networkKey){
-  if(networkKey === 'bradbury') return sdk.testnetBradbury;
-  if(networkKey === 'studionet') return sdk.studionet;
+  if(networkKey === 'bradbury'){ if(!sdk.testnetBradbury) throw new Error('genlayer-js chains failed to load'); return sdk.testnetBradbury; }
+  if(networkKey === 'studionet'){ if(!sdk.studionet) throw new Error('genlayer-js chains failed to load'); return sdk.studionet; }
+  if(!sdk.studionet) throw new Error('genlayer-js chains failed to load');
   return sdk.studionet;
 }
 async function ensureReadClient(){
@@ -695,10 +705,13 @@ async function loadAll(){
   }
   STATE.cases = cases;
   STATE.subjects = subjects;
-  if(readFail || (statsFail && cases.length===0)){
-    STATE.readError = `Could not read OathRegistry from ${net().label}. Check your connection, the contract address, and that the contract is deployed on the selected network.`;
+  // Only surface a blocking read error when we loaded nothing despite a
+  // configured contract. Partial reads still render what we got.
+  if(cases.length===0 && (readFail || statsFail)){
+    STATE.readError = `Could not read OathRegistry from ${net().label}. Check your connection/ad-blocker, the contract address, and that it is deployed on the selected network — then retry.`;
     STATE.sdkError = STATE.readError;
   } else {
+    STATE.readError = null;
     STATE.sdkError = null;
   }
 }
