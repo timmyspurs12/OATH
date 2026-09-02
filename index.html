@@ -89,14 +89,6 @@ input,textarea,select{font-family:inherit;}
 @keyframes ticker{from{transform:translateX(0);}to{transform:translateX(-50%);}}
 @media (prefers-reduced-motion:reduce){.ticker-track{animation:none;}}
 
-/* ===================== DEMO BADGE ===================== */
-.demo-badge{
-  position:fixed;top:16px;right:18px;z-index:200;font-family:var(--mono);font-size:10px;letter-spacing:1.2px;
-  text-transform:uppercase;color:var(--paper-dim);background:var(--ink-2);border:1px solid var(--line);
-  padding:6px 10px;border-radius:3px;display:flex;align-items:center;gap:7px;
-}
-.demo-badge .pip{width:6px;height:6px;border-radius:50%;background:var(--paper-dim);}
-@media (max-width:900px){.demo-badge{position:static;margin-left:auto;}}
 
 /* ===================== FOLDER CARD ===================== */
 .folder{
@@ -352,6 +344,46 @@ footer.site-footer a{text-decoration:none;border-bottom:1px dotted var(--line);}
 .section-sub{font-family:var(--mono);font-size:11px;color:var(--paper-dim);letter-spacing:.6px;margin:0 0 4px;}
 
 .empty-state{padding:60px 20px;text-align:center;font-family:var(--mono);color:var(--paper-dim);font-size:13px;letter-spacing:.6px;}
+
+/* ===================== LIVE NETWORK BADGE ===================== */
+.net-badge{
+  position:fixed;top:16px;right:18px;z-index:200;font-family:var(--mono);font-size:10px;letter-spacing:1.2px;
+  text-transform:uppercase;color:var(--paper);background:var(--ink-2);border:1px solid var(--line);
+  padding:6px 10px;border-radius:3px;display:flex;align-items:center;gap:7px;max-width:60vw;
+}
+.net-badge .pip{width:7px;height:7px;border-radius:50%;background:var(--verdict-green);box-shadow:0 0 6px currentColor;flex:0 0 auto;}
+@media (max-width:900px){.net-badge{position:static;margin:10px 16px 0;display:inline-flex;}}
+
+/* ===================== RAIL WALLET / CONFIG ===================== */
+.rail-addr{display:flex;flex-direction:column;gap:7px;}
+.cfg-btn{
+  background:var(--ink-3);border:1px solid var(--line);color:var(--paper);font-family:var(--mono);
+  font-size:10px;letter-spacing:1px;text-transform:uppercase;padding:8px 10px;border-radius:4px;
+  text-align:left;transition:border-color .15s,color .15s;word-break:break-all;
+}
+.cfg-btn:hover{border-color:var(--gold);color:var(--gold);}
+.cfg-btn.wallet{border-color:rgba(217,168,60,.45);}
+.rail-net{font-family:var(--mono);font-size:11px;letter-spacing:.6px;color:var(--paper);line-height:1.7;}
+.rail-net-switch{display:flex;gap:6px;}
+.net-btn{flex:1;background:var(--ink-3);border:1px solid var(--line);color:var(--paper-dim);font-family:var(--mono);font-size:10px;letter-spacing:1.2px;text-transform:uppercase;padding:8px 6px;border-radius:4px;transition:all .15s;}
+.net-btn:hover{color:var(--paper);border-color:var(--gold);}
+.net-btn.on{color:var(--gold);border-color:var(--gold);background:rgba(217,168,60,.08);}
+
+/* ===================== RECORD CHIP ===================== */
+.rec-chip{font-family:var(--mono);font-size:9.5px;letter-spacing:1px;text-transform:uppercase;color:var(--paper-dim);border:1px solid var(--line);border-radius:3px;padding:2px 7px;white-space:nowrap;}
+
+/* ===================== FILE MESSAGES / TOAST ===================== */
+.file-msg{font-family:var(--mono);font-size:11px;line-height:1.6;margin-top:14px;color:var(--paper-dim);min-height:1em;}
+.file-msg.ok{color:var(--verdict-green);}
+.file-msg.err{color:var(--seal-red);}
+#toast{
+  position:fixed;left:50%;bottom:26px;transform:translateX(-50%);z-index:300;max-width:90vw;
+  background:var(--ink-3);border:1px solid var(--gold);color:var(--paper);font-family:var(--mono);
+  font-size:11.5px;line-height:1.6;padding:12px 16px;border-radius:5px;opacity:0;transition:opacity .25s;
+  box-shadow:0 10px 40px rgba(0,0,0,.5);
+}
+#toast.err{border-color:var(--seal-red);color:#f0c9c0;}
+.scan-bar code{font-family:var(--mono);}
 </style>
 </head>
 <body>
@@ -368,215 +400,335 @@ footer.site-footer a{text-decoration:none;border-bottom:1px dotted var(--line);}
     <main id="content"></main>
     <footer class="site-footer">
       <span>OATH — CLAIM VERIFICATION PROTOCOL</span>
-      <span>INTELLIGENT CONTRACTS ON GENLAYER · BUILD ON BRADBURY TESTNET</span>
-      <span>CONTRACT 0x8F31…C41A</span>
-      <span><a href="#/protocol">DOCS</a> · <a href="#" onclick="return false">GITHUB</a> · <a href="#" onclick="return false">X</a></span>
+      <span>INTELLIGENT CONTRACTS ON GENLAYER · STUDIO + BRADBURY</span>
+      <span id="footerContract">NO CONTRACT CONFIGURED</span>
+      <span><a href="#/protocol">PROTOCOL</a> · <a href="https://github.com/timmyspurs12/OATH" target="_blank" rel="noopener">GITHUB</a> · <a href="https://explorer-bradbury.genlayer.com" target="_blank" rel="noopener">EXPLORER</a></span>
     </footer>
   </div>
 </div>
-<div class="demo-badge"><span class="pip"></span> DEMO — OFFLINE RECORDS</div>
+<div class="net-badge" id="netBadge"><span class="pip"></span> <span id="netBadgeText">GENLAYER STUDIO</span></div>
 
-<script>
+<script type="module">
 /* ============================================================
-   DESIGN TOKENS / ICONS
+   OATH — LIVE GENLAYER FRONTEND
+   All state is derived from OathRegistry view calls. There is no
+   seeded docket, no simulated verdict/appeal/fetch, and no local
+   trust math. Reads use a wallet-less client; writes go through an
+   EIP-1193 wallet (MetaMask) on the selected GenLayer network.
    ============================================================ */
+
+/*
+ * Live deployment: OathRegistry is deployed on the GenLayer Studio Network
+ * (chain 61999). The app defaults to it so the GitHub Pages URL shows real
+ * on-chain state out-of-the-box. Bradbury (4221) is one click away.
+ */
+const NETWORKS = {
+  studionet: {
+    key: 'studionet', label: 'GENLAYER STUDIO', sdkChain: 'studionet',
+    chainId: '0xF22F',                                         // 61999
+    chainName: 'GenLayer Studio Network',
+    rpcUrl: 'https://studio.genlayer.com/api',
+    explorer: 'https://explorer-studio.genlayer.com',
+  },
+  bradbury: {
+    key: 'bradbury', label: 'GENLAYER BRADBURY', sdkChain: 'testnetBradbury',
+    chainId: '0x107D',                                         // 4221
+    chainName: 'GenLayer Bradbury Testnet',
+    rpcUrl: 'https://rpc-bradbury.genlayer.com',
+    explorer: 'https://explorer-bradbury.genlayer.com',
+  },
+};
+const DEFAULT_NETWORK = 'studionet';
+const DEFAULT_CONTRACT = '0xe9B73DD18446a1f121090a21C544D51349a1e8Ad';
+const FAUCET = 'https://testnet-faucet.genlayer.foundation/';
+const GEN = 10n ** 18n;
+
+function net(){ return NETWORKS[STATE.network] || NETWORKS[DEFAULT_NETWORK]; }
+function explorerAddr(addr){ return `${net().explorer}/address/${addr}`; }
+function explorerTx(h){ return `${net().explorer}/tx/${h}`; }
+
+/* ---- verdict codes (must mirror contracts/oath_registry.py) ---- */
 const VERDICT_LABEL = {0:'NONE',1:'VERIFIED',2:'PARTIALLY VERIFIED',3:'CONTRADICTED',4:'UNVERIFIABLE'};
+const VERDICT_SHORT = {0:'NONE',1:'VERIFIED',2:'PARTIAL',3:'CONTRADICTED',4:'UNVERIFIABLE'};
 const VERDICT_CLASS = {0:'verdict-0',1:'verdict-1',2:'verdict-2',3:'verdict-3',4:'verdict-4'};
 const VERDICT_COLOR = {0:'var(--paper-dim)',1:'var(--verdict-green)',2:'var(--verdict-amber)',3:'var(--seal-red)',4:'var(--verdict-blue)'};
 
-const TYPES = [
-  {id:'audit', label:'Audit / security', icon:'shield'},
-  {id:'agent', label:'Agent capability', icon:'node'},
-  {id:'tokenomics', label:'Airdrop / tokenomics', icon:'coins'},
-  {id:'team', label:'Team & docs', icon:'group'},
-  {id:'compliance', label:'Compliance / green', icon:'leaf'},
-  {id:'reputation', label:'Reputation dispute', icon:'scales'},
-];
-
-const ICONS = {
-  shield:'<path d="M8 1 2 3v4c0 4 2.6 6.4 6 8 3.4-1.6 6-4 6-8V3L8 1Z"/>',
-  node:'<circle cx="8" cy="3" r="1.6"/><circle cx="3" cy="12" r="1.6"/><circle cx="13" cy="12" r="1.6"/><path d="M8 4.6V9M8 9 4 11M8 9l4 2"/>',
-  coins:'<ellipse cx="6" cy="5" rx="4.5" ry="2.2"/><path d="M1.5 5v3c0 1.2 2 2.2 4.5 2.2S10.5 9.2 10.5 8V5"/><ellipse cx="10" cy="10" rx="4.5" ry="2.2"/><path d="M5.5 10v1.6c0 1.2 2 2.2 4.5 2.2s4.5-1 4.5-2.2V10"/>',
-  group:'<circle cx="5.5" cy="5" r="2.2"/><circle cx="11" cy="6" r="1.8"/><path d="M1.4 14c0-2.6 1.9-4.4 4.1-4.4s4.1 1.8 4.1 4.4M10 9.6c1.9.2 3.5 1.8 3.6 3.4"/>',
-  leaf:'<path d="M3 13C2 7 6 2 13 2c0 7-5 11-10 11Z"/><path d="M3 13c1.5-3 4-5.5 7.5-7"/>',
-  scales:'<path d="M8 2v12M4 4h8M4 4 1.5 9a2.5 2.5 0 0 0 5 0L4 4Zm8 0 2.5 5a2.5 2.5 0 0 1-5 0L12 4Z"/><path d="M5 14h6"/>',
-};
-function icon(name){return `<svg viewBox="0 0 16 16" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">${ICONS[name]}</svg>`;}
-
 /* ============================================================
-   DEMO DATA
+   SDK LOADING (genlayer-js via ESM CDN — no build step)
    ============================================================ */
-const now = Date.now();
-const hrs = h => new Date(now - h*3600*1000).toISOString();
-const days = d => new Date(now - d*86400*1000).toISOString();
-
-const SUBJECTS = ['arbswap.io','defiplatform.xyz','agent-oracle-7','greenlogistics.na','nova-token.xyz','chainpilot.dev'];
-
-let CASES = [
-  {id:1,subject:'arbswap.io',type:'audit',claim:"ArbSwap's core AMM contracts were audited by CertiK in March 2026 and the report is publicly available.",
-   evidence:['https://certik.com/projects/arbswap','https://arbswap.io/audit','https://arbswap.io/docs/security'],
-   stake:10, status:'FINAL', verdict:1, confidence:88, appeals:0, filed:days(6),
-   rationale:'The CertiK registry lists ArbSwap under active engagements with a matching report hash. The published audit PDF resolves and references the same contract addresses deployed on mainnet. Two of three jurors independently confirmed the auditor signature.',
-   citations:['https://certik.com/projects/arbswap','https://arbswap.io/audit'],
-   exStatus:[200,200,200]},
-
-  {id:2,subject:'defiplatform.xyz',type:'audit',claim:"This platform's contracts were audited by CertiK in May 2026 and the audit is public.",
-   evidence:['https://certik.com/projects/defiplatform','https://defiplatform.xyz/audit-report.pdf'],
-   stake:10, status:'VERDICTED', verdict:3, confidence:93, appeals:1, filed:days(9),
-   rationale:'The cited audit URL returns HTTP 404 and the auditor\'s public registry shows no engagement for this project. The auditor\'s published client list omits the project entirely. The claim is contradicted by the authoritative registry.',
-   citations:['https://certik.com/projects/defiplatform'],
-   exStatus:[404,200]},
-
-  {id:3,subject:'agent-oracle-7',type:'agent',claim:'Agent Oracle-7 has completed over 4,000 automated tasks with a 97% success rate on the public task log.',
-   evidence:['https://agenthub.xyz/agents/oracle-7/log','https://agenthub.xyz/agents/oracle-7/stats'],
-   stake:10, status:'VERDICTED', verdict:2, confidence:61, appeals:0, filed:days(3),
-   rationale:'The public log confirms roughly 3,150 completed tasks, short of the claimed 4,000. The recorded success rate of 91% is close to, but does not match, the claimed 97%. The volume claim is overstated while the general capability claim holds.',
-   citations:['https://agenthub.xyz/agents/oracle-7/log','https://agenthub.xyz/agents/oracle-7/stats'],
-   exStatus:[200,200]},
-
-  {id:4,subject:'greenlogistics.na',type:'compliance',claim:'GreenLogistics holds an active ISO 14001 environmental certification, renewed in 2026.',
-   evidence:['https://iso-cert-database.org/lookup/greenlogistics'],
-   stake:10, status:'VERDICTED', verdict:4, confidence:0, appeals:0, filed:hrs(14), lastError:'certificate database timeout after 3 retries',
-   rationale:'The certificate database endpoint could not be reached across three retries (connection timeout). No alternate public registry entry was located for this subject. The claim cannot be adjudicated without reachable evidence.',
-   citations:[],
-   exStatus:['ERR']},
-
-  {id:5,subject:'nova-token.xyz',type:'tokenomics',claim:'NOVA token allocation caps team holdings at 12% with a 24-month linear vesting schedule.',
-   evidence:['https://nova-token.xyz/tokenomics','https://etherscan.io/token/nova-allocations'],
-   stake:10, status:'FINAL', verdict:1, confidence:91, appeals:0, filed:days(11),
-   rationale:'The on-chain allocation table shows team wallets holding 11.8% of total supply, consistent with the claimed cap. Vesting contract bytecode confirms a 730-day linear unlock schedule matching the stated 24 months.',
-   citations:['https://etherscan.io/token/nova-allocations'],
-   exStatus:[200,200]},
-
-  {id:6,subject:'chainpilot.dev',type:'reputation',claim:'A former contractor alleges ChainPilot misrepresented its audit status; ChainPilot disputes this and has published a rebuttal.',
-   evidence:['https://chainpilot.dev/rebuttal','https://certik.com/projects/chainpilot'],
-   stake:10, status:'APPEALING', verdict:1, confidence:71, appeals:1, filed:days(4),
-   rationale:'The registry confirms an active CertiK engagement matching the dates in ChainPilot\'s rebuttal. The original allegation cites an outdated audit snapshot predating the current engagement. The rebuttal is substantiated by the current registry record.',
-   citations:['https://certik.com/projects/chainpilot','https://chainpilot.dev/rebuttal'],
-   exStatus:[200,200],
-   appealLog:[{n:1,date:days(1),note:'RE-JURIED — verdict upheld (VERIFIED, 71%)'}]},
-
-  {id:7,subject:'arbswap.io',type:'team',claim:"ArbSwap's core team is publicly doxxed with verifiable LinkedIn and GitHub histories.",
-   evidence:['https://github.com/arbswap','https://arbswap.io/team'],
-   stake:10, status:'FINAL', verdict:1, confidence:84, appeals:0, filed:days(20),
-   rationale:'GitHub organization membership matches the four names listed on the team page, each with commit histories predating the project launch. LinkedIn profiles cross-reference consistent employment history.',
-   citations:['https://github.com/arbswap'],
-   exStatus:[200,200]},
-
-  {id:8,subject:'nova-token.xyz',type:'reputation',claim:'A community member claims NOVA\'s liquidity was quietly removed in July 2026.',
-   evidence:['https://etherscan.io/address/nova-lp','https://nova-token.xyz/statement'],
-   stake:10, status:'VERDICTED', verdict:3, confidence:96, appeals:0, filed:days(2),
-   rationale:'On-chain records show the LP token balance for the flagged pool unchanged since deployment. The cited transaction hash in the allegation does not correspond to any liquidity-removal event. The claim is contradicted by the ledger.',
-   citations:['https://etherscan.io/address/nova-lp'],
-   exStatus:[200,200]},
-
-  {id:9,subject:'agent-oracle-7',type:'compliance',claim:'Agent Oracle-7\'s operator is registered under the EU AI Act transparency registry.',
-   evidence:['https://eu-ai-registry.europa.eu/lookup/oracle-7'],
-   stake:10, status:'FINAL', verdict:4, confidence:0, appeals:0, filed:days(15),
-   rationale:'The registry lookup returns no matching entry for this operator ID under any spelling variant tested. No archived snapshot of a prior listing was found. The claim cannot be verified against the cited registry.',
-   citations:[],
-   exStatus:[404]},
-
-  {id:10,subject:'greenlogistics.na',type:'audit',claim:'GreenLogistics\' emissions reporting was independently audited by SGS in Q1 2026.',
-   evidence:['https://sgs.com/verify/greenlogistics','https://greenlogistics.na/report-q1.pdf'],
-   stake:10, status:'FINAL', verdict:2, confidence:58, appeals:0, filed:days(17),
-   rationale:'SGS confirms an engagement, but the published scope covers only warehouse operations, not the fleet emissions figures cited in the claim. The audit exists but does not fully support the scope of the claim as stated.',
-   citations:['https://sgs.com/verify/greenlogistics'],
-   exStatus:[200,200]},
-
-  {id:11,subject:'chainpilot.dev',type:'agent',claim:'ChainPilot\'s routing agent maintains sub-200ms median latency across all supported chains.',
-   evidence:['https://chainpilot.dev/status','https://status.chainpilot.dev/history'],
-   stake:10, status:'PENDING', verdict:0, confidence:0, appeals:0, filed:hrs(2),
-   rationale:'', citations:[], exStatus:[200,200]},
-
-  {id:12,subject:'defiplatform.xyz',type:'tokenomics',claim:'DeFiPlatform\'s treasury wallet is multi-sig with 5 of 7 independent signers.',
-   evidence:['https://etherscan.io/address/dfp-treasury','https://defiplatform.xyz/governance'],
-   stake:10, status:'FINAL', verdict:1, confidence:79, appeals:0, filed:days(25),
-   rationale:'On-chain contract inspection confirms a Gnosis Safe configured for 5-of-7 signing, matching the claim. Five of the seven listed signer addresses have independent transaction histories predating this treasury.',
-   citations:['https://etherscan.io/address/dfp-treasury'],
-   exStatus:[200,200]},
-
-  {id:13,subject:'arbswap.io',type:'compliance',claim:'ArbSwap has completed KYC/AML screening through Chainalysis for its fiat on-ramp partner.',
-   evidence:['https://arbswap.io/compliance'],
-   stake:10, status:'FINAL', verdict:2, confidence:64, appeals:0, filed:days(30),
-   rationale:'The compliance page references a Chainalysis integration for the on-ramp partner, consistent with the claim, but provides no verifiable attestation ID to cross-check independently. Partial support on the available evidence.',
-   citations:['https://arbswap.io/compliance'],
-   exStatus:[200]},
-
-  {id:14,subject:'nova-token.xyz',type:'team',claim:'NOVA\'s lead developer previously shipped two audited protocols under a different project name.',
-   evidence:['https://github.com/nova-lead','https://certik.com/projects/prior-protocol'],
-   stake:10, status:'FINAL', verdict:1, confidence:82, appeals:0, filed:days(33),
-   rationale:'Commit signatures on the prior protocol\'s repository match the key currently used by NOVA\'s lead developer account. Both prior engagements appear in the auditor\'s public registry under the stated project names.',
-   citations:['https://github.com/nova-lead','https://certik.com/projects/prior-protocol'],
-   exStatus:[200,200]},
-];
-
-function subjectScore(subject){
-  const cs = CASES.filter(c=>c.subject===subject && c.status!=='PENDING');
-  if(cs.length===0) return {subject, totalVerdicts:0, verified:0, partial:0, contradicted:0, unverifiable:0, score:50, lastVerdict:'NONE'};
-  let v=0,p=0,c=0,u=0;
-  cs.forEach(k=>{ if(k.verdict===1)v++; else if(k.verdict===2)p++; else if(k.verdict===3)c++; else if(k.verdict===4)u++; });
-  const weighted = v*1 + p*0.5 + u*0.25 + c*0;
-  const score = Math.round((weighted/cs.length)*100);
-  const last = cs.slice().sort((a,b)=>new Date(b.filed)-new Date(a.filed))[0];
-  return {subject, totalVerdicts:cs.length, verified:v, partial:p, contradicted:c, unverifiable:u, score, lastVerdict:VERDICT_LABEL[last.verdict]};
+let SDK = null;
+async function loadSDK(){
+  if(SDK) return SDK;
+  const [gl, types] = await Promise.all([
+    import('https://esm.sh/genlayer-js@1.1.8'),
+    import('https://esm.sh/genlayer-js@1.1.8/types'),
+  ]);
+  SDK = { ...gl, ...types };
+  return SDK;
 }
 
-function stats(){
+/* ============================================================
+   APP STATE / CONFIG
+   ============================================================ */
+const STATE = {
+  network: DEFAULT_NETWORK,
+  address: null,        // OathRegistry address
+  readClient: null,
+  writeClient: null,
+  account: null,        // connected wallet address
+  sdkReady: false,
+  sdkError: null,
+  cases: [],            // mapped from get_claim(1..N)
+  stats: null,          // get_stats()
+  subjects: new Set(),  // discovered subjects
+  loading: false,
+};
+
+function networkKey(){
+  const q = new URLSearchParams(location.search).get('network');
+  if(q && NETWORKS[q]){ localStorage.setItem('oath_network', q); return q; }
+  const saved = localStorage.getItem('oath_network');
+  return (saved && NETWORKS[saved]) ? saved : DEFAULT_NETWORK;
+}
+function contractAddress(){
+  const q = new URLSearchParams(location.search).get('contract');
+  if(q && /^0x[0-9a-fA-F]{40}$/.test(q)){ localStorage.setItem('oath_contract_'+STATE.network, q); return q; }
+  const saved = localStorage.getItem('oath_contract_'+STATE.network);
+  if(saved && /^0x[0-9a-fA-F]{40}$/.test(saved)) return saved;
+  // Ship the deployed Studio contract as the default so the live app shows
+  // real on-chain state with zero configuration.
+  return STATE.network === DEFAULT_NETWORK ? DEFAULT_CONTRACT : null;
+}
+function setContractAddress(addr){
+  localStorage.setItem('oath_contract_'+STATE.network, addr);
+  STATE.address = addr;
+  STATE.cases = []; STATE.stats = null; STATE.subjects = new Set();
+}
+
+/* ============================================================
+   LOW-LEVEL READ / WRITE
+   ============================================================ */
+function num(v){ if(v==null) return 0; if(typeof v==='bigint') return Number(v); if(typeof v==='number') return v; const n=Number(v); return Number.isFinite(n)?n:0; }
+function fmtGEN(wei){ return (Number(BigInt(num(wei)))/1e18).toFixed(2) + ' GEN'; }
+function shortAddr(a){ if(!a) return '—'; return a.slice(0,6)+'…'+a.slice(-4); }
+
+async function readView(functionName, args=[]){
+  const { readClient, address } = STATE;
+  if(!readClient || !address) throw new Error('no contract');
+  return await readClient.readContract({ address, functionName, args, stateStatus: 'accepted' });
+}
+
+function sdkChainFor(sdk, networkKey){
+  if(networkKey === 'bradbury') return sdk.testnetBradbury;
+  if(networkKey === 'studionet') return sdk.studionet;
+  return sdk.studionet;
+}
+async function ensureReadClient(){
+  const sdk = await loadSDK();
+  STATE.readClient = sdk.createClient({ chain: sdkChainFor(sdk, STATE.network) });
+  STATE.sdkReady = true;
+  return STATE.readClient;
+}
+
+async function connectWallet(){
+  const provider = window.ethereum;
+  if(!provider) throw new Error('No EIP-1193 wallet found. Install MetaMask (or another browser wallet) to file claims.');
+  let accounts;
+  try {
+    accounts = await provider.request({ method: 'eth_requestAccounts' });
+  } catch(e){ throw new Error('Wallet connection rejected.'); }
+  const account = accounts && accounts[0];
+  if(!account) throw new Error('No account selected.');
+
+  // Make sure the wallet is on the selected GenLayer network (add it if missing).
+  const N = net();
+  try {
+    await provider.request({ method: 'wallet_switchEthereumChain', params:[{ chainId: N.chainId }] });
+  } catch(sw){
+    if(sw && (sw.code === 4902 || /unrecognized|not added|32603/i.test(String(sw.message||'')))){
+      await provider.request({ method: 'wallet_addEthereumChain', params:[{
+        chainId: N.chainId,
+        chainName: N.chainName,
+        rpcUrls: [N.rpcUrl],
+        nativeCurrency: { name: 'GEN Token', symbol: 'GEN', decimals: 18 },
+        blockExplorerUrls: [N.explorer],
+      }]});
+    } else {
+      // Some wallets reject switch when already on the chain; continue.
+    }
+  }
+
+  const sdk = await loadSDK();
+  STATE.writeClient = sdk.createClient({
+    chain: sdkChainFor(sdk, STATE.network),
+    account,
+    provider,
+  });
+  try { await STATE.writeClient.connect(N.sdkChain); } catch(_){ /* chain already switched */ }
+  STATE.account = account;
+  provider.on?.('accountsChanged', (accs)=>{ STATE.account = accs?.[0] || null; route(); });
+  provider.on?.('chainChanged', ()=>{ /* no reload; reads are chain-bound by client */ });
+  return account;
+}
+
+/* Send a write tx, wait for FINALIZED, and verify the execution result. */
+async function sendWrite(functionName, args, valueWei=0n){
+  if(!STATE.writeClient || !STATE.account) await connectWallet();
+  const sdk = await loadSDK();
+  const tx = await STATE.writeClient.writeContract({
+    address: STATE.address,
+    functionName,
+    args,
+    value: BigInt(valueWei),
+  });
+  const hash = tx?.transactionHash ?? tx?.hash ?? tx;
+  const receipt = await STATE.writeClient.waitForTransactionReceipt({
+    hash,
+    status: sdk.TransactionStatus.FINALIZED,
+    retries: 120,
+    interval: 4000,
+  });
+  const resultName = receipt?.txExecutionResultName;
+  if(resultName && resultName !== sdk.ExecutionResult.FINISHED_WITH_RETURN){
+    throw new Error(`Transaction finalized but contract execution failed (${resultName}). State was not changed.`);
+  }
+  return { receipt, hash };
+}
+
+/* ============================================================
+   DATA LOADING — every value comes from contract views
+   ============================================================ */
+function mapClaim(raw){
   return {
-    claimsFiled: CASES.length,
-    claimsAdjudicated: CASES.filter(c=>c.status!=='PENDING').length,
-    claimsContradicted: CASES.filter(c=>c.verdict===3).length,
-    treasury: (CASES.length*0.5).toFixed(2),
+    id: num(raw.id),
+    requester: raw.requester,
+    subject: raw.subject,
+    claim: raw.claim,
+    evidence: Array.isArray(raw.evidence) ? raw.evidence : [],
+    stakeWei: BigInt(num(raw.stake_wei)),
+    status: raw.status,
+    verdict: num(raw.verdict),
+    verdictLabel: raw.verdict_label,
+    confidence: num(raw.confidence),
+    rationale: raw.rationale || '',
+    citations: Array.isArray(raw.citations) ? raw.citations : [],
+    appeals: num(raw.appeals),
+    filed: raw.created_at || '',
+    adjudicatedAt: raw.adjudicated_at || '',
+  };
+}
+function mapTrust(raw){
+  return {
+    subject: raw.subject,
+    totalVerdicts: num(raw.total_verdicts),
+    verified: num(raw.verified),
+    partial: num(raw.partial),
+    contradicted: num(raw.contradicted),
+    unverifiable: num(raw.unverifiable),
+    score: num(raw.score),
+    lastVerdict: num(raw.last_verdict),
+    lastVerdictLabel: raw.last_verdict_label || 'NO_DATA',
+    lastUpdated: raw.last_updated || '',
+  };
+}
+function mapStats(raw){
+  return {
+    claimsFiled: num(raw.claims_filed),
+    claimsAdjudicated: num(raw.claims_adjudicated),
+    claimsContradicted: num(raw.claims_contradicted),
+    treasuryWei: BigInt(num(raw.treasury_wei)),
+    minStakeWei: BigInt(num(raw.min_stake_wei)),
+    feeBps: num(raw.fee_bps),
   };
 }
 
+async function loadAll(){
+  STATE.network = networkKey();
+  STATE.address = contractAddress();
+  STATE.readClient = null;  // rebuild client for the selected network
+  if(!STATE.address){ STATE.cases=[]; STATE.stats=null; return; }
+  await ensureReadClient();
+
+  // stats first — gives us the authoritative filed count
+  try { STATE.stats = mapStats(await readView('get_stats', [])); }
+  catch(e){ STATE.stats = null; }
+
+  // discover the docket: get_claim(1..N) until the first missing id.
+  // next_id is monotonic and claims are never deleted, so this is a
+  // deterministic view-only discovery strategy.
+  const high = STATE.stats ? STATE.stats.claimsFiled : 0;
+  const cases = [];
+  const subjects = new Set();
+  let id = 1;
+  const cap = Math.max(high + 1, 1);
+  while(id <= cap + 5){
+    let raw;
+    try { raw = await readView('get_claim', [id]); }
+    catch(_) { break; }            // "claim not found" -> end of docket
+    if(!raw || raw.subject == null) break;
+    const c = mapClaim(raw);
+    cases.push(c);
+    if(c.subject) subjects.add(c.subject);
+    id++;
+  }
+  STATE.cases = cases;
+  STATE.subjects = subjects;
+}
+
+async function refresh(){ await loadAll(); }
+
+async function getTrust(subject){
+  try { return mapTrust(await readView('get_trust', [subject])); }
+  catch(_){ return { subject, totalVerdicts:0, verified:0, partial:0, contradicted:0, unverifiable:0, score:50, lastVerdict:0, lastVerdictLabel:'NO_DATA', lastUpdated:'' }; }
+}
+async function getTrustBatch(subjects){
+  if(!subjects.length) return [];
+  try {
+    const raw = await readView('get_trust_batch', [JSON.stringify(subjects)]);
+    const arr = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    return (Array.isArray(arr)?arr:[]).map(mapTrust);
+  } catch(_){ return []; }
+}
+
+/* ============================================================
+   DESIGN HELPERS (icons, stamp, seal, formatting)
+   ============================================================ */
 function timeAgo(iso){
-  const diff = (now - new Date(iso).getTime())/1000;
+  if(!iso) return '—';
+  const t = new Date(iso).getTime(); if(!Number.isFinite(t)) return '—';
+  const diff = (Date.now()-t)/1000;
+  if(diff < 60) return 'just now';
   if(diff < 3600) return Math.round(diff/60)+'m ago';
   if(diff < 86400) return Math.round(diff/3600)+'h ago';
   return Math.round(diff/86400)+'d ago';
 }
-function utc(iso){
-  const d = new Date(iso);
-  return d.toISOString().slice(11,19)+' UTC';
-}
-function dateShort(iso){ return new Date(iso).toISOString().slice(0,10); }
+function utc(iso){ if(!iso) return '—'; const d=new Date(iso); return Number.isFinite(d)? d.toISOString().slice(11,19)+' UTC' : '—'; }
+function dateShort(iso){ if(!iso) return '—'; const d=new Date(iso); return Number.isFinite(d)? d.toISOString().slice(0,10) : '—'; }
+function esc(s){ return String(s??'').replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
 
-/* ============================================================
-   COMPONENTS
-   ============================================================ */
 function Stamp(verdictCode, {mini=false, landing=false}={}){
-  const cls = `stamp ${mini?'mini':''} ${VERDICT_CLASS[verdictCode]} ${landing?'landing':''}`;
-  return `<span class="${cls}">${VERDICT_LABEL[verdictCode]}</span>`;
+  const cls = `stamp ${mini?'mini':''} ${VERDICT_CLASS[verdictCode]||'verdict-0'} ${landing?'landing':''}`;
+  return `<span class="${cls}">${esc(VERDICT_LABEL[verdictCode]||'NONE')}</span>`;
 }
-
 function sealBand(score){
   if(score===50) return {color:'var(--paper-dim)', label:'NO DATA'};
   if(score>=70) return {color:'var(--verdict-green)', label:'TRUSTED'};
   if(score>=40) return {color:'var(--verdict-amber)', label:'MIXED'};
   return {color:'var(--seal-red)', label:'FLAGGED'};
 }
-
 function seed(str){ let h=0; for(let i=0;i<str.length;i++){h=(h*31+str.charCodeAt(i))>>>0;} return h; }
-
-function SealScore(subject, score, size=96){
+function SealScore(key, score, size=96){
   const band = sealBand(score);
-  const r = size/2 - 8;
-  const cx = size/2, cy = size/2;
-  const pts = 14;
-  let path = '';
-  const rnd = seed(subject+score);
+  const r = size/2 - 8, cx=size/2, cy=size/2, pts=14;
+  let path=''; const rnd = seed(String(key)+score);
   for(let i=0;i<=pts;i++){
-    const a = (i/pts)*Math.PI*2;
-    const wob = ((rnd>>(i%20)) % 5) - 2;
-    const rr = r + (score===50?0:wob*0.8);
-    const x = cx + rr*Math.cos(a), y = cy + rr*Math.sin(a);
-    path += (i===0?'M':'L') + x.toFixed(1)+','+y.toFixed(1)+' ';
+    const a=(i/pts)*Math.PI*2; const wob=((rnd>>(i%20))%5)-2;
+    const rr=r+(score===50?0:wob*0.8);
+    const x=cx+rr*Math.cos(a), y=cy+rr*Math.sin(a);
+    path+=(i===0?'M':'L')+x.toFixed(1)+','+y.toFixed(1)+' ';
   }
-  const fs = size*0.30;
-  return `
-  <div class="seal-wrap">
+  const fs=size*0.30;
+  return `<div class="seal-wrap">
     <svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
       <path d="${path}Z" fill="none" stroke="${band.color}" stroke-width="2.5"/>
       <circle cx="${cx}" cy="${cy}" r="${r-9}" fill="none" stroke="${band.color}" stroke-width="1" opacity=".5"/>
@@ -586,40 +738,8 @@ function SealScore(subject, score, size=96){
   </div>`;
 }
 
-function DocketRow(c){
-  const sc = subjectScore(c.subject);
-  return `<tr onclick="location.hash='#/case/${c.id}'">
-    <td data-label="#"><span class="case-id">#${String(c.id).padStart(4,'0')}</span></td>
-    <td data-label="Subject" class="subj-cell">${c.subject}</td>
-    <td data-label="Type"><span style="font-size:10.5px;letter-spacing:.6px;color:var(--paper-dim);text-transform:uppercase">${TYPES.find(t=>t.id===c.type).label}</span></td>
-    <td data-label="Status"><span class="status-txt" style="color:${c.status==='PENDING'?'var(--paper-dim)':'var(--paper)'}">${c.status}</span></td>
-    <td data-label="Verdict">${c.status==='PENDING'?'<span style="color:var(--paper-dim)">—</span>':Stamp(c.verdict,{mini:true})}</td>
-    <td data-label="Confidence" class="conf-cell" style="color:${c.confidence? (c.confidence>=70?'var(--verdict-green)':c.confidence>=40?'var(--verdict-amber)':'var(--seal-red)') : 'var(--paper-dim)'}">${c.confidence?c.confidence+'%':'—'}</td>
-    <td data-label="Filed">${utc(c.filed)}</td>
-    <td data-label="Stake">${c.stake.toFixed(2)} GEN</td>
-    <td class="arrow-cell">open case →</td>
-  </tr>`;
-}
-
-function ExhibitPin(url, status, idx){
-  const ok = status===200;
-  const err = status==='ERR';
-  const statusText = err ? 'error · timeout' : ok ? 'fetched · 200' : `dead · ${status}`;
-  const statusColor = err ? 'var(--seal-red)' : ok ? 'var(--verdict-green)' : 'var(--seal-red)';
-  const previews = [
-    "SPDX-License-Identifier: MIT // pragma solidity ^0.8.20; contract Registry { mapping(address => Report) public reports; event Filed(uint256 indexed id, address...",
-    "audit report — engagement #A-2291, scope: core AMM, staking, treasury multisig. Findings: 2 low, 0 critical. Signed 2026-03-11...",
-    "404 Not Found — nginx/1.24 — the requested resource could not be located on this server...",
-  ];
-  return `<div class="exhibit-pin">
-    <div class="ex-url">${url}</div>
-    <div class="ex-status" style="color:${statusColor};border-color:${statusColor}55">${statusText}</div>
-    <div class="ex-preview">${err? 'connection timeout after 3 retries — no content retrieved' : previews[idx%previews.length]}</div>
-  </div>`;
-}
-
 /* ============================================================
-   RAIL / NAV / TICKER
+   RAIL / NAV / TICKER / BADGE
    ============================================================ */
 const NAVS = [
   {href:'#/preflight', label:'Pre-flight'},
@@ -627,9 +747,15 @@ const NAVS = [
   {href:'#/ledger', label:'Trust ledger'},
   {href:'#/protocol', label:'Protocol'},
 ];
+function isActive(href){
+  const h = location.hash || '#/preflight';
+  if(href==='#/preflight') return h.startsWith('#/preflight') || h==='' || h==='#/';
+  return h.startsWith(href);
+}
 
 function renderRail(){
-  const s = stats();
+  const s = STATE.stats;
+  const addr = STATE.address;
   document.getElementById('rail').innerHTML = `
     <div class="brand">
       <div class="brand-mark">OATH<span>.</span></div>
@@ -638,15 +764,22 @@ function renderRail(){
     <nav class="navlist">
       ${NAVS.map(n=>`<a class="navitem ${isActive(n.href)?'active':''}" href="${n.href}"><span class="dot"></span>${n.label}</a>`).join('')}
     </nav>
+    <div class="rail-net-switch">
+      ${Object.values(NETWORKS).map(n=>`<button class="net-btn ${STATE.network===n.key?'on':''}" data-net="${n.key}">${n.key==='studionet'?'STUDIO':'BRADBURY'}</button>`).join('')}
+    </div>
+    <div class="rail-addr">
+      <button class="cfg-btn" id="cfgBtn">${addr ? 'CONTRACT '+shortAddr(addr) : 'CONFIGURE CONTRACT'}</button>
+      <button class="cfg-btn wallet" id="walletBtn">${STATE.account ? 'WALLET '+shortAddr(STATE.account) : 'CONNECT WALLET'}</button>
+    </div>
     <div class="rail-stats">
-      <div class="rail-stat-row"><span class="k">Cases filed</span><span class="v">${s.claimsFiled}</span></div>
-      <div class="rail-stat-row"><span class="k">Adjudicated</span><span class="v">${s.claimsAdjudicated}</span></div>
-      <div class="rail-stat-row"><span class="k">Contradicted</span><span class="v" style="color:var(--seal-red)">${s.claimsContradicted}</span></div>
-      <div class="rail-stat-row"><span class="k">Treasury</span><span class="v">${s.treasury} GEN</span></div>
+      <div class="rail-stat-row"><span class="k">Cases filed</span><span class="v">${s?s.claimsFiled:'—'}</span></div>
+      <div class="rail-stat-row"><span class="k">Adjudicated</span><span class="v">${s?s.claimsAdjudicated:'—'}</span></div>
+      <div class="rail-stat-row"><span class="k">Contradicted</span><span class="v" style="color:var(--seal-red)">${s?s.claimsContradicted:'—'}</span></div>
+      <div class="rail-stat-row"><span class="k">Treasury</span><span class="v">${s?fmtGEN(s.treasuryWei):'—'}</span></div>
     </div>
     <div class="rail-seal">
-      <div class="rail-seal-label">Seal of the day</div>
-      ${SealScore('nova-token.xyz', subjectScore('nova-token.xyz').score, 84)}
+      <div class="rail-seal-label">Network</div>
+      <div class="rail-net">${net().label}<br><span style="color:var(--paper-dim)">chain ${parseInt(net().chainId,16)} · GEN</span></div>
     </div>
   `;
   document.getElementById('topbar').innerHTML = `
@@ -655,342 +788,506 @@ function renderRail(){
       ${NAVS.map(n=>`<option value="${n.href}" ${isActive(n.href)?'selected':''}>${n.label}</option>`).join('')}
     </select>
   `;
-}
-function isActive(href){
-  const h = location.hash || '#/preflight';
-  if(href==='#/preflight') return h.startsWith('#/preflight') || h==='' || h==='#/';
-  return h.startsWith(href);
+  document.getElementById('footerContract').innerHTML = addr
+    ? `<a href="${explorerAddr(addr)}" target="_blank" rel="noopener">CONTRACT ${shortAddr(addr)}</a>`
+    : 'NO CONTRACT CONFIGURED';
+  const cfgBtn=document.getElementById('cfgBtn'), wBtn=document.getElementById('walletBtn');
+  if(cfgBtn) cfgBtn.onclick = promptContract;
+  if(wBtn) wBtn.onclick = async ()=>{ try{ await connectWallet(); toast('Wallet connected: '+shortAddr(STATE.account)); renderRail(); }catch(e){ toast(e.message,'err'); } };
+  document.querySelectorAll('.net-btn').forEach(b=>b.onclick=()=>{
+    const k=b.dataset.net; if(k===STATE.network) return;
+    localStorage.setItem('oath_network', k);
+    STATE.network=k; STATE.address=null; STATE.readClient=null; STATE.writeClient=null; STATE.account=null;
+    toast('Switched to '+(NETWORKS[k].label)); route();
+  });
+
+  const badge = document.getElementById('netBadgeText');
+  const pip = document.querySelector('#netBadge .pip');
+  if(!addr){ badge.textContent='NO CONTRACT — CONFIGURE TO READ LIVE STATE'; pip.style.background='var(--verdict-amber)'; }
+  else if(STATE.sdkError){ badge.textContent='RPC ERROR — '+net().label; pip.style.background='var(--seal-red)'; }
+  else { badge.textContent=net().label+' · LIVE'; pip.style.background='var(--verdict-green)'; }
 }
 
 function renderTicker(){
-  const items = CASES.filter(c=>c.status!=='PENDING').slice().sort((a,b)=>new Date(b.filed)-new Date(a.filed))
-    .map(c=>`<span class="ticker-item">◈ <b style="color:${VERDICT_COLOR[c.verdict]}">${VERDICT_LABEL[c.verdict]}</b> · ${utc(c.filed)} · ${c.subject}</span>`).join('');
-  document.getElementById('ticker').innerHTML = `<div class="ticker-track">${items}${items}</div>`;
+  const items = STATE.cases
+    .filter(c=>c.status!=='PENDING' && c.verdict>0)
+    .sort((a,b)=> new Date(b.adjudicatedAt||b.filed) - new Date(a.adjudicatedAt||a.filed))
+    .map(c=>`<span class="ticker-item">◈ <b style="color:${VERDICT_COLOR[c.verdict]}">${esc(VERDICT_SHORT[c.verdict])}</b> · ${esc(c.subject)} · #${String(c.id).padStart(4,'0')}</span>`).join('');
+  const wrap = document.getElementById('ticker');
+  wrap.innerHTML = items ? `<div class="ticker-track">${items}${items}</div>`
+    : `<div class="ticker-track"><span class="ticker-item">◈ NO VERDICTS ON-CHAIN YET — FILE THE FIRST CASE</span></div>`;
 }
 
 /* ============================================================
-   SCREENS
+   CONFIGURE CONTRACT PROMPT
+   ============================================================ */
+function promptContract(){
+  const cur = STATE.address || '';
+  const v = prompt('Paste your deployed OathRegistry address (0x…) on '+net().label+':', cur);
+  if(v==null) return;
+  const addr = v.trim();
+  if(addr && !/^0x[0-9a-fA-F]{40}$/.test(addr)){ toast('That does not look like a 0x address.','err'); return; }
+  if(addr){ setContractAddress(addr); toast('Contract set: '+shortAddr(addr)); }
+  else { localStorage.removeItem('oath_contract'); STATE.address=null; STATE.cases=[]; STATE.stats=null; }
+  route();
+}
+
+/* ============================================================
+   TOAST / STATUS
+   ============================================================ */
+let toastTimer=null;
+function toast(msg, kind='ok'){
+  let t = document.getElementById('toast');
+  if(!t){ t=document.createElement('div'); t.id='toast'; document.body.appendChild(t); }
+  t.className = kind==='err' ? 'toast err' : 'toast';
+  t.textContent = msg;
+  t.style.opacity='1';
+  clearTimeout(toastTimer);
+  toastTimer=setTimeout(()=>{ t.style.opacity='0'; }, 5200);
+}
+function setBusy(el, msg){ if(el){ el.disabled=true; el.dataset.label=el.textContent; el.textContent=msg; } }
+function clearBusy(el){ if(el){ el.disabled=false; if(el.dataset.label) el.textContent=el.dataset.label; } }
+
+/* ============================================================
+   CONFIGURE GATE (shown when no contract address)
+   ============================================================ */
+function configGate(){
+  return `
+  <div class="folder" style="margin-top:8px">
+    <div class="folder-tab">Live contract required</div>
+    <div class="eyebrow" style="margin-bottom:10px">Source of truth</div>
+    <h1 class="hero-headline" style="font-size:clamp(24px,3.2vw,38px)">Point OATH at your deployed OathRegistry.</h1>
+    <p class="hero-sub">This app reads and writes the real OathRegistry Intelligent Contract over GenLayerJS — it ships with no demo records. The deployed Studio contract is pre-loaded; you can also deploy <b style="color:var(--paper)">contracts/oath_registry.py</b> in GenLayer Studio or via genlayer-cli and paste the address below (or open with <code style="color:var(--gold)">?contract=0x…</code>).</p>
+    <div class="scan-bar" style="margin-left:0;max-width:640px">
+      <span class="prefix">$ set_contract(</span><input id="gateAddr" placeholder="0x…" value="${STATE.address||''}"/><span class="prefix">)</span>
+    </div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:6px">
+      <button class="submit-btn" id="gateSet" style="margin-top:0">Set contract →</button>
+      <a class="ghost-btn" style="display:inline-flex;align-items:center;text-decoration:none" href="${FAUCET}" target="_blank" rel="noopener">Get testnet GEN →</a>
+      <a class="ghost-btn" style="display:inline-flex;align-items:center;text-decoration:none" href="https://studio.genlayer.com" target="_blank" rel="noopener">Open GenLayer Studio →</a>
+    </div>
+    <div class="demo-banner" style="margin-top:20px">
+      Reads need no wallet. Writes (file_claim · adjudicate · appeal · finalize) require an EIP-1193 wallet with GEN on the selected network. Switch Studio / Bradbury from the left rail; the network + contract are persisted in localStorage.
+    </div>
+  </div>`;
+}
+function wireGate(){
+  const btn=document.getElementById('gateSet'), inp=document.getElementById('gateAddr');
+  const go=()=>{ const addr=(inp.value||'').trim(); if(!/^0x[0-9a-fA-F]{40}$/.test(addr)){ toast('Enter a valid 0x contract address.','err'); return; } setContractAddress(addr); toast('Contract set.'); route(); };
+  if(btn) btn.onclick=go;
+  if(inp) inp.addEventListener('keydown', e=>{ if(e.key==='Enter') go(); });
+}
+
+/* ============================================================
+   S1 — PRE-FLIGHT (file a claim)
    ============================================================ */
 function screenPreflight(){
-  const el = document.getElementById('content');
+  const el=document.getElementById('content');
+  if(!STATE.address){ el.innerHTML = configGate(); wireGate(); renderPreflightBoard(null); return; }
+  const minStake = STATE.stats ? fmtGEN(STATE.stats.minStakeWei) : '10.00 GEN';
+  const feePct = STATE.stats ? (STATE.stats.feeBps/100).toFixed(1)+'%' : '5%';
   el.innerHTML = `
-    <div class="demo-banner">Demo records. Deploy <b>contracts/oath_registry.py</b> in GenLayer Studio and set <b>VITE_OATH_CONTRACT</b> to go live. <a href="https://testnet-faucet.genlayer.foundation/" target="_blank">Get testnet GEN →</a></div>
     <div class="hero-grid">
       <div>
         <div class="eyebrow">File a claim</div>
         <h1 class="hero-headline">Every claim faces a jury.</h1>
-        <p class="hero-sub">OATH verifies public claims — audits, agent track records, tokenomics, compliance — by fetching the evidence and letting a decentralized jury of AI models deliver the verdict, on-chain, in minutes.</p>
+        <p class="hero-sub">OATH verifies public claims — audits, agent track records, tokenomics, compliance — by fetching the evidence itself and letting a decentralized jury of AI models deliver the verdict, on-chain, in minutes.</p>
         <div class="filing-steps"><span>File a case</span><span>Present your evidence</span><span>The jury deliberates</span><span>Verdict recorded</span></div>
 
         <form id="filingForm">
           <label class="field-label">Subject</label>
-          <input class="field" id="f-subject" placeholder="app.defiplatform.xyz" />
+          <input class="field" id="f-subject" placeholder="app.defiplatform.xyz" required />
 
           <label class="field-label">The claim</label>
-          <textarea class="field" id="f-claim" placeholder="This platform's contracts were audited by CertiK in May 2026 and the audit is public."></textarea>
+          <textarea class="field" id="f-claim" placeholder="This platform's contracts were audited by CertiK in May 2026 and the audit is public." required></textarea>
 
-          <label class="field-label">Exhibits <b>(up to 5)</b></label>
+          <label class="field-label">Exhibits <b>(up to 5 — URLs the contract will fetch itself)</b></label>
           <div class="exhibit-rows" id="exRows">
-            <div class="exhibit-row"><span class="ex-label">EXHIBIT A</span><input class="field" placeholder="https://…"/></div>
+            <div class="exhibit-row"><span class="ex-label">EXHIBIT A</span><input class="field" placeholder="https://…" /></div>
           </div>
           <button type="button" class="ghost-btn" id="addEx">+ ADD EXHIBIT</button>
 
-          <label class="field-label">Claim type</label>
-          <div class="chip-row" id="typeChips">
-            ${TYPES.map((t,i)=>`<button type="button" class="type-chip ${i===0?'selected':''}" data-type="${t.id}">${icon(t.icon)}${t.label}</button>`).join('')}
-          </div>
-
-          <button type="submit" class="submit-btn">File case →</button>
-          <div class="stake-line">stake 10.00 GEN · refunded unless CONTRADICTED · fee 5%</div>
+          <button type="submit" class="submit-btn" id="fileBtn">File case →</button>
+          <div class="stake-line">stake ${minStake} · refunded unless CONTRADICTED · fee ${feePct} · paid to OathRegistry on ${net().label}</div>
+          <div id="fileMsg" class="file-msg"></div>
         </form>
       </div>
 
       <div class="folder">
-        <div class="folder-tab">Case #${String(CASES.length).padStart(4,'0')}</div>
-        <div class="eyebrow" style="margin-bottom:10px">Exhibit board</div>
+        <div class="folder-tab">The record</div>
+        <div class="eyebrow" style="margin-bottom:10px">What happens on-chain</div>
         <div id="board"></div>
       </div>
     </div>
   `;
+  wirePreflight();
+  renderPreflightBoard(null);
+}
 
-  const exLabels = ['A','B','C','D','E'];
-  document.getElementById('addEx').onclick = ()=>{
-    const rows = document.getElementById('exRows');
+function boardRow(thumbColor, title, bodyHtml){
+  return `<div class="board-item"><div class="thumb" style="background:${thumbColor}"></div><div>
+    <div class="board-item-title">${title}</div>
+    <div class="board-item-body">${bodyHtml}</div>
+  </div></div>`;
+}
+function renderPreflightBoard(live){
+  const board=document.getElementById('board'); if(!board) return;
+  if(!live){
+    const latest = STATE.cases.slice().sort((a,b)=>b.id-a.id)[0];
+    board.innerHTML =
+      boardRow('var(--seal-red)','1 · Evidence fetched','The OathRegistry contract itself fetches every exhibit URL at adjudication time via native web access — no oracle, no upload you can doctor.')
+      + boardRow('var(--gold)','2 · Jury deliberation','A leader validator drafts a verdict; peer validators re-run the same jury prompt on diverse LLMs and reach consensus by the Equivalence Principle.')
+      + boardRow('var(--verdict-blue)','3 · Verdict + seal', latest
+          ? `Latest on-chain record: case #${String(latest.id).padStart(4,'0')} · ${esc(latest.subject)} · ${latest.verdict? Stamp(latest.verdict,{mini:true}) : '<span style="color:var(--paper-dim)">PENDING</span>'}`
+          : 'No cases on-chain yet. File the first claim — the verdict and the subject’s trust seal are written by the contract, not by this app.');
+    return;
+  }
+  // live filing progress
+  const stage = live.stage;
+  const dot = (done,active)=>({done:'var(--verdict-green)',active:'var(--gold)'}[done?'done':active?'active':''] || 'var(--paper-dim)');
+  board.innerHTML =
+    boardRow(stage>=1?'var(--verdict-green)':stage===0?'var(--gold)':'var(--paper-dim)','1 · file_claim [payable]',
+      stage>=1 ? `Case <b>#${live.caseId||'…'}</b> filed on-chain. Stake ${live.stake}.` : 'Sign the wallet transaction to post the stake and record the claim.')
+    + boardRow(stage>=2?'var(--verdict-green)':stage===1?'var(--gold)':'var(--paper-dim)','2 · Evidence + jury (adjudicate)',
+      stage>=2 ? 'Jury reached consensus; verdict written on-chain.'
+      : stage===1 ? 'The contract is fetching exhibits and running the LLM jury — consensus takes 30–90s.'
+      : 'After filing, RUN JURY calls adjudicate() — the contract fetches URLs and convenes the jury.')
+    + boardRow(stage>=3?'var(--verdict-green)':stage===2?'var(--gold)':'var(--paper-dim)','3 · Verdict + seal',
+      stage>=3 ? `${Stamp(live.verdict,{mini:true})} · confidence ${live.confidence}% · seal for ${esc(live.subject)} updated from get_trust.`
+      : 'The verdict, rationale, citations and the subject’s trust score all come back from contract views.');
+}
+
+function wirePreflight(){
+  const exLabels=['A','B','C','D','E'];
+  document.getElementById('addEx').onclick=()=>{
+    const rows=document.getElementById('exRows');
     if(rows.children.length>=5) return;
-    const n = rows.children.length;
-    const row = document.createElement('div');
-    row.className='exhibit-row';
-    row.innerHTML = `<span class="ex-label">EXHIBIT ${exLabels[n]}</span><input class="field" placeholder="https://…"/>`;
-    rows.appendChild(row);
-    row.querySelector('input').focus();
+    const n=rows.children.length;
+    const row=document.createElement('div'); row.className='exhibit-row';
+    row.innerHTML=`<span class="ex-label">EXHIBIT ${exLabels[n]}</span><input class="field" placeholder="https://…"/>`;
+    rows.appendChild(row); row.querySelector('input').focus();
   };
-  document.getElementById('exRows').addEventListener('keydown', e=>{
-    if(e.key==='Enter'){ e.preventDefault(); document.getElementById('addEx').click(); }
-  });
-  document.querySelectorAll('.type-chip').forEach(chip=>{
-    chip.onclick = ()=>{ document.querySelectorAll('.type-chip').forEach(c=>c.classList.remove('selected')); chip.classList.add('selected'); };
-  });
-  document.getElementById('filingForm').onsubmit = (e)=>{ e.preventDefault(); runDemoFiling(); };
-
-  playBoard(CASES[1], true); // replay defiplatform.xyz contradicted case on load
+  document.getElementById('exRows').addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); document.getElementById('addEx').click(); } });
+  document.getElementById('filingForm').onsubmit = (e)=>{ e.preventDefault(); fileClaim(); };
 }
 
-function playBoard(c, loop){
-  const board = document.getElementById('board');
-  if(!board) return;
-  const exStatus = c.exStatus;
-  board.innerHTML = `
-    <div class="board-item"><div class="thumb"></div><div>
-      <div class="board-item-title">Evidence fetched</div>
-      <div class="board-item-body" id="b-ex">${c.evidence.map((u,i)=>`<span class="exchip" data-i="${i}"><span class="tick">…</span> ${new URL(u).hostname}</span>`).join('')}</div>
-    </div></div>
-    <div class="board-item"><div class="thumb" style="background:var(--gold)"></div><div>
-      <div class="board-item-title">Jury deliberation</div>
-      <div class="board-item-body" id="b-jury">
-        <span class="juror-chip" data-j="claude">CLAUDE</span><span class="juror-chip" data-j="gpt">GPT</span><span class="juror-chip" data-j="gemini">GEMINI</span>
-        <div id="b-agree" style="margin-top:6px;color:var(--paper-dim);font-family:var(--mono);font-size:10.5px;"></div>
-      </div>
-    </div></div>
-    <div class="board-item"><div class="thumb" style="background:${VERDICT_COLOR[c.verdict]}"></div><div>
-      <div class="board-item-title">Verdict recorded</div>
-      <div class="board-item-body" id="b-stamp"></div>
-    </div></div>
-    <div class="board-item"><div class="thumb" style="background:var(--verdict-blue)"></div><div>
-      <div class="board-item-title">Seal updated</div>
-      <div class="board-item-body" id="b-seal" style="color:var(--paper-dim)">${c.subject} · recalculating…</div>
-    </div></div>
-  `;
-  let t=0;
-  c.evidence.forEach((u,i)=>{
-    t += 380;
-    setTimeout(()=>{
-      const el = board.querySelector(`.exchip[data-i="${i}"]`);
-      if(!el) return;
-      const ok = exStatus[i]===200;
-      el.classList.add(ok?'ok':'dead');
-      el.querySelector('.tick').textContent = ok?'✓':'✕';
-      el.innerHTML = el.innerHTML.replace('…', ok?'fetched 200 · 1.2s':`dead ${exStatus[i]}`);
-    }, t);
-  });
-  ['claude','gpt','gemini'].forEach((j,i)=>{
-    t += 260;
-    setTimeout(()=>{ const el = board.querySelector(`.juror-chip[data-j="${j}"]`); if(el) el.classList.add('lit'); }, t);
-  });
-  t += 300;
-  setTimeout(()=>{ const el = board.querySelector('#b-agree'); if(el) el.textContent = 'AGREEMENT: 2/3'; }, t);
-  t += 400;
-  setTimeout(()=>{ const el = board.querySelector('#b-stamp'); if(el) el.innerHTML = Stamp(c.verdict,{landing:true}); }, t);
-  t += 500;
-  setTimeout(()=>{ const el = board.querySelector('#b-seal'); if(el){ const sc = subjectScore(c.subject); el.style.color='var(--paper)'; el.textContent = `${c.subject} · seal now ${sc.score}`; } }, t);
-}
+async function fileClaim(){
+  const btn=document.getElementById('fileBtn');
+  const msg=document.getElementById('fileMsg');
+  const subject=document.getElementById('f-subject').value.trim();
+  const claim=document.getElementById('f-claim').value.trim();
+  const urls=[...document.querySelectorAll('#exRows input')].map(i=>i.value.trim()).filter(Boolean);
+  msg.className='file-msg'; msg.textContent='';
 
-function runDemoFiling(){
-  const subject = document.getElementById('f-subject').value.trim() || 'unknown-subject.xyz';
-  const claim = document.getElementById('f-claim').value.trim() || 'Untitled claim.';
-  const urls = [...document.querySelectorAll('#exRows input')].map(i=>i.value.trim()).filter(Boolean);
-  const type = document.querySelector('.type-chip.selected')?.dataset.type || 'audit';
-  const verdictPool = [1,2,3,4];
-  const verdict = verdictPool[Math.floor(Math.random()*verdictPool.length)];
-  const confidence = 55 + Math.floor(Math.random()*40);
-  const newCase = {
-    id: CASES.length+1, subject, type, claim,
-    evidence: urls.length?urls:['https://example.com/evidence'],
-    stake:10, status:'PENDING', verdict:0, confidence:0, appeals:0, filed:new Date().toISOString(),
-    rationale:'', citations:[], exStatus:(urls.length?urls:[1]).map(()=> Math.random()>0.25?200:404),
-  };
-  CASES.unshift(newCase);
-  document.querySelector('.folder-tab').textContent = `Case #${String(newCase.id).padStart(4,'0')}`;
-  playBoard(newCase);
-  setTimeout(()=>{
-    newCase.status='VERDICTED'; newCase.verdict=verdict; newCase.confidence=confidence;
-    newCase.rationale = 'The jury cross-referenced the submitted exhibits against public registries and on-chain records to reach this verdict.';
-    newCase.citations = newCase.evidence.slice(0,2);
+  if(subject.length<3){ msg.className='file-msg err'; msg.textContent='Subject must be at least 3 characters.'; return; }
+  if(claim.length<20){ msg.className='file-msg err'; msg.textContent='The claim must be at least 20 characters (the contract enforces this).'; return; }
+  if(urls.length<1){ msg.className='file-msg err'; msg.textContent='Add at least one evidence URL the contract can fetch.'; return; }
+  if(urls.length>5){ msg.className='file-msg err'; msg.textContent='At most 5 evidence URLs.'; return; }
+  for(const u of urls){ if(!/^https?:\/\//.test(u)){ msg.className='file-msg err'; msg.textContent='Evidence URLs must start with http(s)://: '+u; return; } }
+
+  const stakeWei = STATE.stats ? STATE.stats.minStakeWei : 10n*GEN;
+  try{
+    if(!STATE.account){ toast('Connect a wallet to file a claim.'); await connectWallet(); renderRail(); }
+    setBusy(btn,'FILING… SIGN WALLET');
+    renderPreflightBoard({stage:0});
+    const { hash: fileHash } = await sendWrite('file_claim', [subject, claim, JSON.stringify(urls)], stakeWei);
+    toast('file_claim finalized: '+shortAddr(fileHash));
+
+    // discover the new case id from the chain (re-read stats + claims)
+    await refresh();
+    const created = STATE.cases.filter(c=>c.subject===subject).sort((a,b)=>b.id-a.id)[0];
+    const caseId = created ? created.id : (STATE.stats?STATE.stats.claimsFiled:1);
+    renderPreflightBoard({stage:1, caseId, stake:fmtGEN(stakeWei)});
     renderRail(); renderTicker();
-  }, 2600);
-  document.getElementById('filingForm').reset();
-  document.querySelectorAll('.type-chip').forEach((c,i)=>c.classList.toggle('selected', i===0));
-  document.getElementById('exRows').innerHTML = `<div class="exhibit-row"><span class="ex-label">EXHIBIT A</span><input class="field" placeholder="https://…"/></div>`;
+
+    msg.className='file-msg ok';
+    msg.innerHTML = `Case <b>#${String(caseId).padStart(4,'0')}</b> is on-chain as PENDING. The jury has not convened yet — `
+      + `<a href="#/case/${caseId}" style="color:var(--gold);text-decoration:underline">open the case and RUN JURY →</a>`;
+    clearBusy(btn);
+    document.getElementById('filingForm').reset();
+    document.getElementById('exRows').innerHTML=`<div class="exhibit-row"><span class="ex-label">EXHIBIT A</span><input class="field" placeholder="https://…"/></div>`;
+  }catch(e){
+    clearBusy(btn);
+    msg.className='file-msg err';
+    msg.textContent = friendlyErr(e);
+    renderPreflightBoard({stage:0});
+  }
 }
 
-let docketSort = {key:'filed', dir:-1};
-let docketFilter = null;
-let docketSearch = '';
+function friendlyErr(e){
+  const m = (e && (e.shortMessage || e.message || String(e))) || 'Transaction failed.';
+  if(/stake too low/i.test(m)) return 'Stake too low — the wallet must send at least the minimum GEN stake.';
+  if(/claim_text must be/i.test(m)) return 'The claim text must be 20–2000 characters.';
+  if(/subject must be/i.test(m)) return 'The subject must be 3–256 characters.';
+  if(/evidence/i.test(m)) return 'Evidence must be a JSON array of 1–5 http(s) URLs.';
+  if(/user rejected|rejected the transaction/i.test(m)) return 'Transaction rejected in the wallet.';
+  if(/insufficient|not enough funds/i.test(m)) return 'Insufficient GEN for stake + gas. Use the faucet.';
+  if(/FINISHED_WITH_ERROR|execution failed/i.test(m)) return 'Contract execution reverted: '+m;
+  return m;
+}
 
-function screenDocket(){
-  const el = document.getElementById('content');
+/* ============================================================
+   S2 — DOCKET
+   ============================================================ */
+let docketSort={key:'filed',dir:-1};
+let docketFilter=null, docketSearch='';
+
+async function screenDocket(){
+  const el=document.getElementById('content');
+  if(!STATE.address){ el.innerHTML=configGate(); wireGate(); return; }
   el.innerHTML = `
     <div class="eyebrow">The docket</div>
     <h2 class="section-title" style="margin-top:6px">All cases on record</h2>
+    <p class="section-sub">Discovered from get_claim(1…N) — the registry’s own ledger.</p>
     <div class="docket-toolbar">
       <div class="filter-chips" id="fchips">
         ${['VERIFIED','PARTIAL','CONTRADICTED','UNVERIFIABLE','APPEALING','PENDING'].map(v=>`<button class="fchip ${docketFilter===v?'on':''}" data-v="${v}">${v}</button>`).join('')}
       </div>
-      <input class="search-box" id="dsearch" placeholder="search subject…" value="${docketSearch}"/>
+      <input class="search-box" id="dsearch" placeholder="search subject…" value="${esc(docketSearch)}"/>
     </div>
     <div style="overflow-x:auto">
-    <table class="docket">
-      <thead><tr>
-        <th data-k="id">#</th><th data-k="subject">Subject</th><th data-k="type">Type</th><th data-k="status">Status</th>
-        <th data-k="verdict">Verdict</th><th data-k="confidence">Confidence</th><th data-k="filed">Filed (UTC)</th><th data-k="stake">Stake</th><th></th>
-      </tr></thead>
-      <tbody id="docketBody"></tbody>
-    </table>
+      <table class="docket">
+        <thead><tr>
+          <th data-k="id">#</th><th data-k="subject">Subject</th><th data-k="type">Record</th><th data-k="status">Status</th>
+          <th data-k="verdict">Verdict</th><th data-k="confidence">Confidence</th><th data-k="filed">Filed (UTC)</th><th data-k="stake">Stake</th><th></th>
+        </tr></thead>
+        <tbody id="docketBody"></tbody>
+      </table>
     </div>
+    <button class="ghost-btn" id="docketRefresh" style="margin-top:14px">↻ REFRESH FROM CHAIN</button>
   `;
-  document.querySelectorAll('.fchip').forEach(c=>c.onclick=()=>{ docketFilter = docketFilter===c.dataset.v?null:c.dataset.v; renderDocketBody(); document.querySelectorAll('.fchip').forEach(x=>x.classList.toggle('on', x.dataset.v===docketFilter)); });
-  document.getElementById('dsearch').oninput = (e)=>{ docketSearch = e.target.value; renderDocketBody(); };
-  document.querySelectorAll('table.docket thead th[data-k]').forEach(th=>th.onclick=()=>{
-    const k = th.dataset.k;
-    docketSort.dir = docketSort.key===k ? -docketSort.dir : -1;
-    docketSort.key = k;
-    renderDocketBody();
-  });
+  document.querySelectorAll('.fchip').forEach(c=>c.onclick=()=>{ docketFilter=docketFilter===c.dataset.v?null:c.dataset.v; screenDocket(); });
+  document.getElementById('dsearch').oninput=(e)=>{ docketSearch=e.target.value; renderDocketBody(); };
+  document.querySelectorAll('table.docket thead th[data-k]').forEach(th=>th.onclick=()=>{ const k=th.dataset.k; docketSort.dir=docketSort.key===k?-docketSort.dir:-1; docketSort.key=k; renderDocketBody(); });
+  document.getElementById('docketRefresh').onclick=async (e)=>{ e.target.disabled=true; e.target.textContent='READING CHAIN…'; await refresh(); renderRail(); renderTicker(); renderDocketBody(); e.target.disabled=false; e.target.textContent='↻ REFRESH FROM CHAIN'; };
   renderDocketBody();
 }
+
+function DocketRow(c){
+  return `<tr onclick="location.hash='#/case/${c.id}'">
+    <td data-label="#"><span class="case-id">#${String(c.id).padStart(4,'0')}</span></td>
+    <td data-label="Subject" class="subj-cell">${esc(c.subject)}</td>
+    <td data-label="Record"><span class="rec-chip">PUBLIC CLAIM</span></td>
+    <td data-label="Status"><span class="status-txt" style="color:${c.status==='PENDING'?'var(--paper-dim)':'var(--paper)'}">${esc(c.status)}</span></td>
+    <td data-label="Verdict">${c.status==='PENDING'||c.verdict===0?'<span style="color:var(--paper-dim)">—</span>':Stamp(c.verdict,{mini:true})}</td>
+    <td data-label="Confidence" class="conf-cell" style="color:${c.confidence?(c.confidence>=70?'var(--verdict-green)':c.confidence>=40?'var(--verdict-amber)':'var(--seal-red)'):'var(--paper-dim)'}">${c.confidence?c.confidence+'%':'—'}</td>
+    <td data-label="Filed">${utc(c.filed)}</td>
+    <td data-label="Stake">${fmtGEN(c.stakeWei)}</td>
+    <td class="arrow-cell">open case →</td>
+  </tr>`;
+}
+
 function renderDocketBody(){
-  let rows = CASES.slice();
+  let rows=STATE.cases.slice();
   if(docketFilter){
-    const map = {VERIFIED:1,PARTIAL:2,CONTRADICTED:3,UNVERIFIABLE:4};
-    if(docketFilter==='APPEALING') rows = rows.filter(c=>c.status==='APPEALING');
-    else if(docketFilter==='PENDING') rows = rows.filter(c=>c.status==='PENDING');
-    else rows = rows.filter(c=>c.verdict===map[docketFilter]);
+    const map={VERIFIED:1,PARTIAL:2,CONTRADICTED:3,UNVERIFIABLE:4};
+    if(docketFilter==='APPEALING') rows=rows.filter(c=>c.status==='APPEALING');
+    else if(docketFilter==='PENDING') rows=rows.filter(c=>c.status==='PENDING'||c.status==='ADJUDICATING');
+    else rows=rows.filter(c=>c.verdict===map[docketFilter]);
   }
-  if(docketSearch) rows = rows.filter(c=>c.subject.toLowerCase().includes(docketSearch.toLowerCase()));
-  const key = docketSort.key, dir = docketSort.dir;
+  if(docketSearch) rows=rows.filter(c=>c.subject.toLowerCase().includes(docketSearch.toLowerCase()));
+  const key=docketSort.key, dir=docketSort.dir;
   rows.sort((a,b)=>{
     let av,bv;
     if(key==='id'){av=a.id;bv=b.id;}
-    else if(key==='filed'){av=new Date(a.filed).getTime();bv=new Date(b.filed).getTime();}
+    else if(key==='filed'){av=new Date(a.filed).getTime()||0;bv=new Date(b.filed).getTime()||0;}
     else if(key==='confidence'){av=a.confidence;bv=b.confidence;}
-    else if(key==='stake'){av=a.stake;bv=b.stake;}
-    else {av=(a[key]||'').toString();bv=(b[key]||'').toString();}
+    else if(key==='stake'){av=Number(a.stakeWei);bv=Number(b.stakeWei);}
+    else if(key==='verdict'){av=a.verdict;bv=b.verdict;}
+    else {av=a[key==='type'?'status':key]||'';bv=b[key==='type'?'status':key]||'';}
     if(av<bv) return -1*dir; if(av>bv) return 1*dir; return 0;
   });
-  const body = document.getElementById('docketBody');
-  if(rows.length===0){ body.innerHTML = `<tr><td colspan="9"><div class="empty-state">The docket is empty. File the first case.</div></td></tr>`; return; }
-  body.innerHTML = rows.map(DocketRow).join('');
+  const body=document.getElementById('docketBody');
+  if(rows.length===0){ body.innerHTML=`<tr><td colspan="9"><div class="empty-state">${STATE.cases.length===0?'The docket is empty. File the first case.':'No cases match that filter.'}</div></td></tr>`; return; }
+  body.innerHTML=rows.map(DocketRow).join('');
 }
 
-function screenCase(id){
-  const c = CASES.find(x=>x.id===id);
-  const el = document.getElementById('content');
-  if(!c){ el.innerHTML = `<div class="empty-state">Case not found.</div>`; return; }
-  const sc = subjectScore(c.subject);
-  const windowOpen = c.status==='VERDICTED';
+/* ============================================================
+   S3 — CASE FILE
+   ============================================================ */
+async function screenCase(id){
+  const el=document.getElementById('content');
+  if(!STATE.address){ el.innerHTML=configGate(); wireGate(); return; }
+  el.innerHTML=`<div class="empty-state">Reading case #${String(id).padStart(4,'0')} from chain…</div>`;
+  let raw;
+  try { raw = await readView('get_claim', [Number(id)]); }
+  catch(_){ el.innerHTML=`<div class="empty-state">Case #${String(id).padStart(4,'0')} not found on this contract.<br><br><a href="#/docket" style="color:var(--gold)">← back to docket</a></div>`; return; }
+  const c = mapClaim(raw);
+  const trust = await getTrust(c.subject);
+
+  // appeal stake mirrors the contract: extra = stake * multiplier^(appeal_count+1)
+  const multiplier = 2n;
+  const nextAppealExtra = c.appeals < 2 ? c.stakeWei * (multiplier ** BigInt(c.appeals+1)) : 0n;
+  const canAppeal = c.status==='VERDICTED';
+  const canFinalize = (c.status==='VERDICTED' || c.status==='APPEALING');
+  const canAdjudicate = (c.status==='PENDING' || c.status==='APPEALING');
+
   el.innerHTML = `
     <div class="folder">
       <div class="folder-tab">Case #${String(c.id).padStart(4,'0')}</div>
       <div class="file-header">
         <div>
-          <h1 style="font-family:var(--serif);font-size:clamp(26px,3.4vw,38px);font-weight:560;margin:6px 0">${c.subject}</h1>
-          <div class="pull-quote ${c.verdict===3?'seal-red':'gold'}">${c.claim}</div>
+          <h1 style="font-family:var(--serif);font-size:clamp(26px,3.4vw,38px);font-weight:560;margin:6px 0">${esc(c.subject)}</h1>
+          <div class="pull-quote ${c.verdict===3?'seal-red':'gold'}">${esc(c.claim)}</div>
           <div class="meta-strip">
-            <span>FILED ${utc(c.filed)}</span><span>BY 0x8f3…c41</span><span>STAKE ${c.stake.toFixed(2)} GEN</span>
-            <span>TYPE ${TYPES.find(t=>t.id===c.type).label.toUpperCase()}</span>
+            <span>FILED ${utc(c.filed)}</span>
+            <span>BY <a href="${explorerAddr(c.requester)}" target="_blank" rel="noopener" style="color:var(--verdict-blue)">${shortAddr(c.requester)}</a></span>
+            <span>STAKE ${fmtGEN(c.stakeWei)}</span>
+            <span>RECORD PUBLIC CLAIM</span>
+            <span>APPEALS ${c.appeals}/2</span>
           </div>
         </div>
         <div class="sidecol">
-          ${c.status==='PENDING' ? `<div style="font-family:var(--mono);font-size:11px;color:var(--paper-dim)">ADJUDICATING…</div>` : Stamp(c.verdict)}
+          ${c.status==='PENDING' ? `<div style="font-family:var(--mono);font-size:11px;color:var(--paper-dim)">AWAITING JURY — STATUS ${esc(c.status)}</div>`
+            : c.status==='ADJUDICATING' ? `<div style="font-family:var(--mono);font-size:11px;color:var(--gold)">JURY DELIBERATING…</div>`
+            : Stamp(c.verdict)}
           ${c.confidence?`<div class="sc-row">CONFIDENCE <b>${c.confidence}%</b></div>`:''}
-          <div class="sc-row">RECORDED ON-CHAIN — <b style="color:var(--verdict-blue)">0x91a…7fe2</b></div>
+          <div class="sc-row">CONTRACT <a href="${explorerAddr(STATE.address)}" target="_blank" rel="noopener" style="color:var(--verdict-blue)"><b>${shortAddr(STATE.address)}</b></a></div>
           <div style="display:flex;align-items:center;gap:14px">
-            ${SealScore(c.subject, sc.score, 76)}
-            <div class="sc-row" style="line-height:1.7">SEAL SCORE<br>OF <b>${c.subject}</b></div>
+            ${SealScore(c.subject, trust.score, 76)}
+            <div class="sc-row" style="line-height:1.7">SEAL SCORE<br>OF <b>${esc(c.subject)}</b><br><span style="color:var(--paper-dim)">from get_trust()</span></div>
           </div>
-          ${windowOpen ? `<button class="action-btn" onclick="submitAppeal(${c.id})">Submit appeal — stake ×2, window closes in 6d 04h</button>`
-            : c.status==='APPEALING' ? `<button class="action-btn" disabled>APPEAL PENDING</button>`
-            : c.status==='FINAL' ? `<button class="action-btn" disabled>WINDOW CLOSED</button>` : ``}
+          ${canAdjudicate ? `<button class="action-btn" id="btnAdj">${c.status==='APPEALING'?'RE-RUN JURY (re-adjudicate)':'Run jury — adjudicate()'}</button>` : ''}
+          ${canAppeal ? `<button class="action-btn" id="btnAppeal">Submit appeal — stake ${fmtGEN(nextAppealExtra)} (×${c.appeals===0?2:4})</button>` : ''}
+          ${c.status==='APPEALING' ? `<button class="action-btn" disabled>APPEAL OPEN — RE-RUN JURY</button>` : ''}
+          ${c.status==='FINAL' ? `<button class="action-btn" disabled>FINAL — RECORD LOCKED</button>`
+            : canFinalize ? `<button class="action-btn" id="btnFinal">Finalize — lock verdict</button>` : ''}
+          <div id="caseMsg" class="file-msg"></div>
         </div>
       </div>
 
       ${c.evidence.length ? `
       <div class="tabs" id="exTabs">
-        ${c.evidence.map((u,i)=>{
-          const ok = c.exStatus[i]===200, err=c.exStatus[i]==='ERR';
-          const col = err||!ok ? 'var(--seal-red)' : 'var(--verdict-green)';
-          return `<button class="tab-btn ${i===0?'active':''}" data-i="${i}"><span class="dot" style="background:${col}"></span>EXHIBIT ${String.fromCharCode(65+i)}</button>`;
-        }).join('')}
+        ${c.evidence.map((u,i)=>`<button class="tab-btn ${i===0?'active':''}" data-i="${i}"><span class="dot" style="background:var(--verdict-blue)"></span>EXHIBIT ${String.fromCharCode(65+i)}</button>`).join('')}
       </div>
-      <div id="exBody">${ExhibitPin(c.evidence[0], c.exStatus[0], 0)}</div>
+      <div id="exBody">${ExhibitPin(c.evidence[0], 0)}</div>
       ` : ''}
 
-      ${c.status!=='PENDING' ? `
-      <div class="transcript-head">Jury transcript — 3 models in agreement</div>
+      ${c.status!=='PENDING' && c.status!=='ADJUDICATING' ? `
+      <div class="transcript-head">Jury transcript — verdict from OathRegistry</div>
       <div class="transcript-body" id="transcriptBody"></div>
-      <div class="citelist">${c.citations.map(u=>`<div class="cite-row">${u}</div>`).join('')}</div>
-      ` : `<div class="transcript-head">Jury transcript</div><div class="transcript-body" style="color:var(--paper-dim)">The jury has not yet convened on this case.</div>`}
+      <div class="citelist">${c.citations.length ? c.citations.map(u=>`<a class="cite-row" href="${esc(u)}" target="_blank" rel="noopener">${esc(u)}</a>`).join('') : '<span style="color:var(--paper-dim)">No citations returned.</span>'}</div>
+      ` : `<div class="transcript-head">Jury transcript</div><div class="transcript-body" style="color:var(--paper-dim)">The jury has not yet convened on this case. Call adjudicate() to fetch the evidence and run consensus.</div>`}
 
-      ${c.appealLog ? `<div class="appeal-history">${c.appealLog.map(a=>`L${a.n} · ${dateShort(a.date)} · ${a.note}`).join('<br>')}</div>` : ''}
+      ${c.appeals>0 ? `<div class="appeal-history">APPEAL HISTORY · ${c.appeals} appeal${c.appeals>1?'s':''} filed on-chain · status ${esc(c.status)}${c.adjudicatedAt?' · last adjudicated '+dateShort(c.adjudicatedAt):''}</div>` : ''}
     </div>
   `;
+
   if(c.evidence.length){
     document.querySelectorAll('#exTabs .tab-btn').forEach(b=>b.onclick=()=>{
       document.querySelectorAll('#exTabs .tab-btn').forEach(x=>x.classList.remove('active'));
       b.classList.add('active');
-      const i = +b.dataset.i;
-      document.getElementById('exBody').innerHTML = ExhibitPin(c.evidence[i], c.exStatus[i], i);
+      document.getElementById('exBody').innerHTML = ExhibitPin(c.evidence[+b.dataset.i], +b.dataset.i);
     });
   }
-  if(c.status!=='PENDING' && c.rationale) typewrite(document.getElementById('transcriptBody'), c.rationale);
-}
-function typewrite(el, text){
-  const reduced = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)').matches : false;
-  if(reduced){ el.textContent = text; return; }
-  let i=0;
-  el.textContent='';
-  const step = ()=>{
-    if(i<=text.length){ el.textContent = text.slice(0,i); i++; setTimeout(step, 16); }
-  };
-  step();
-}
-function submitAppeal(id){
-  const c = CASES.find(x=>x.id===id);
-  c.status='APPEALING'; c.appeals=(c.appeals||0)+1;
-  c.appealLog = c.appealLog||[];
-  c.appealLog.push({n:c.appeals, date:new Date().toISOString(), note:'APPEAL FILED — awaiting re-adjudication'});
-  screenCase(id);
+  if(c.status!=='PENDING' && c.status!=='ADJUDICATING' && c.rationale) typewrite(document.getElementById('transcriptBody'), c.rationale);
+
+  const msg=document.getElementById('caseMsg');
+  const btnAdj=document.getElementById('btnAdj'), btnAppeal=document.getElementById('btnAppeal'), btnFinal=document.getElementById('btnFinal');
+  if(btnAdj) btnAdj.onclick=()=>runWrite('adjudicate', [c.id], 0n, btnAdj, msg, 'Jury convening — the contract is fetching evidence and reaching consensus. This can take 30–90s…');
+  if(btnAppeal) btnAppeal.onclick=()=>runWrite('appeal', [c.id], nextAppealExtra, btnAppeal, msg, 'Appeal submitted; status is now APPEALING. Re-run the jury to re-adjudicate.');
+  if(btnFinal) btnFinal.onclick=()=>runWrite('finalize', [c.id], 0n, btnFinal, msg, 'Finalize submitted — the record will be locked.');
 }
 
-function screenLedger(prefill){
-  const el = document.getElementById('content');
+/* Evidence display: the contract does NOT persist HTTP status/content,
+   so we label exhibits ON-CHAIN EVIDENCE and never fabricate a 200/404. */
+function ExhibitPin(url, idx){
+  return `<div class="exhibit-pin">
+    <div class="ex-url">${esc(url)}</div>
+    <div class="ex-status" style="color:var(--verdict-blue);border-color:rgba(78,124,168,.4)">on-chain evidence · fetched by the contract at adjudication</div>
+    <div class="ex-preview" style="filter:none">The contract fetches this URL itself during adjudicate() (native web access). HTTP status and page content are not persisted in OathRegistry storage — the verdict’s rationale and citations reflect what the jury read.</div>
+  </div>`;
+}
+
+async function runWrite(method, args, valueWei, btn, msgEl, okNote){
+  try{
+    if(!STATE.account){ toast('Connect a wallet first.'); await connectWallet(); renderRail(); }
+    setBusy(btn,'SUBMITTING…');
+    msgEl.className='file-msg'; msgEl.textContent='Waiting for wallet signature and GenLayer consensus…';
+    const { hash } = await sendWrite(method, args, valueWei);
+    msgEl.className='file-msg ok';
+    msgEl.innerHTML = `${esc(okNote||'Done.')} <span style="color:var(--paper-dim)">tx ${shortAddr(hash)}. Re-reading state from contract views…</span>`;
+    clearBusy(btn);
+    await refresh();
+    renderRail(); renderTicker();
+    // re-render the current case from fresh chain state
+    const m = location.hash.match(/#\/case\/(\d+)/);
+    if(m) screenCase(Number(m[1])); else route();
+  }catch(e){
+    clearBusy(btn);
+    msgEl.className='file-msg err';
+    msgEl.textContent = friendlyErr(e);
+  }
+}
+
+function typewrite(el, text){
+  const reduced = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)').matches : false;
+  if(reduced){ el.textContent=text; return; }
+  let i=0; el.textContent='';
+  const step=()=>{ if(i<=text.length){ el.textContent=text.slice(0,i); i++; setTimeout(step,12); } };
+  step();
+}
+
+/* ============================================================
+   S4 — TRUST LEDGER
+   ============================================================ */
+async function screenLedger(prefill){
+  const el=document.getElementById('content');
+  if(!STATE.address){ el.innerHTML=configGate(); wireGate(); return; }
+  // build the "top subjects" table from the on-chain docket, scored via get_trust_batch
+  const subjectList = [...STATE.subjects];
+  const scores = await getTrustBatch(subjectList);
+  const bySub = Object.fromEntries(scores.map(s=>[s.subject,s]));
+  const counts = {};
+  STATE.cases.forEach(c=>{ counts[c.subject]=(counts[c.subject]||0)+1; });
+  const top = subjectList
+    .map(s=>({ subject:s, trust:bySub[s]||{score:50,totalVerdicts:0,lastVerdictLabel:'NO_DATA'}, n:counts[s]||0 }))
+    .sort((a,b)=> b.n - a.n || b.trust.totalVerdicts - a.trust.totalVerdicts);
+
   el.innerHTML = `
     <div class="eyebrow" style="text-align:center;display:block">Trust ledger</div>
     <h2 class="section-title" style="text-align:center">Scan any subject before you trust it.</h2>
     <div class="scan-bar">
-      <span class="prefix">$ get_trust(</span><input id="ledgerInput" placeholder="app.defiplatform.xyz" value="${prefill||''}"/><span class="prefix">)</span>
+      <span class="prefix">$ get_trust(</span><input id="ledgerInput" placeholder="app.defiplatform.xyz" value="${esc(prefill||'')}"/><span class="prefix">)</span>
     </div>
     <div id="ledgerResult"></div>
-    <h3 style="font-family:var(--serif);font-size:19px;margin-top:44px">Top subjects</h3>
+    <h3 style="font-family:var(--serif);font-size:19px;margin-top:44px">Subjects on the record</h3>
+    <p class="section-sub">Scores are read live from get_trust_batch() — the same call any agent/wallet/marketplace makes.</p>
     <table class="subject-table">
-      <thead><tr><th>Subject</th><th>Verdicts</th><th>Seal</th><th>Last verdict</th></tr></thead>
+      <thead><tr><th>Subject</th><th>Cases</th><th>Verdicts</th><th>Seal</th><th>Last verdict</th></tr></thead>
       <tbody>
-        ${SUBJECTS.map(s=>{const sc=subjectScore(s); return `<tr onclick="document.getElementById('ledgerInput').value='${s}';renderLedgerResult('${s}')">
-          <td style="font-family:var(--serif);color:var(--paper)">${s}</td><td>${sc.totalVerdicts}</td>
-          <td style="color:${sealBand(sc.score).color}">${sc.score}</td><td>${sc.lastVerdict}</td></tr>`}).join('')}
+        ${top.length ? top.map(r=>`<tr onclick="document.getElementById('ledgerInput').value='${esc(r.subject)}';renderLedgerResult('${esc(r.subject)}')">
+          <td style="font-family:var(--serif);color:var(--paper)">${esc(r.subject)}</td>
+          <td>${r.n}</td><td>${r.trust.totalVerdicts}</td>
+          <td style="color:${sealBand(r.trust.score).color}">${r.trust.score===50&&r.trust.totalVerdicts===0?'—':r.trust.score}</td>
+          <td>${esc(r.trust.lastVerdictLabel)}</td></tr>`).join('')
+          : '<tr><td colspan="5" style="color:var(--paper-dim)">No subjects on-chain yet.</td></tr>'}
       </tbody>
     </table>
   `;
-  const input = document.getElementById('ledgerInput');
+  const input=document.getElementById('ledgerInput');
   input.addEventListener('keydown', e=>{ if(e.key==='Enter') renderLedgerResult(input.value.trim()); });
   if(prefill) renderLedgerResult(prefill);
 }
-function renderLedgerResult(subject){
-  const box = document.getElementById('ledgerResult');
+
+window.renderLedgerResult = async function(subject){
+  const box=document.getElementById('ledgerResult');
   if(!subject){ box.innerHTML=''; return; }
-  const sc = subjectScore(subject);
+  box.innerHTML=`<div class="folder" style="margin-top:26px;text-align:center"><div class="empty-state" style="padding:30px">Reading get_trust("${esc(subject)}")…</div></div>`;
+  const sc = await getTrust(subject);
+  const hist = STATE.cases.filter(c=>c.subject===subject).sort((a,b)=> new Date(b.filed)-new Date(a.filed));
   if(sc.totalVerdicts===0){
-    box.innerHTML = `<div class="folder" style="margin-top:26px;text-align:center">
-      ${SealScore(subject, 50, 110)}
+    box.innerHTML=`<div class="folder" style="margin-top:26px;text-align:center">
+      ${SealScore(subject,50,110)}
       <div style="font-family:var(--mono);font-size:11px;letter-spacing:.8px;color:var(--paper-dim);margin-top:14px">
         NO VERDICTS ON RECORD.<br>50 = NEUTRAL. TRUST NOTHING UNVERIFIED.
       </div>
     </div>`;
     return;
   }
-  const hist = CASES.filter(c=>c.subject===subject).sort((a,b)=>new Date(b.filed)-new Date(a.filed));
-  box.innerHTML = `
+  box.innerHTML=`
     <div class="folder">
-      <div class="folder-tab">${subject}</div>
+      <div class="folder-tab">${esc(subject)}</div>
       <div class="ledger-result">
         ${SealScore(subject, sc.score, 130)}
         <div>
@@ -1001,21 +1298,23 @@ function renderLedgerResult(subject){
           <div class="weighted-line">SCORE ${sc.score}/100 · WEIGHTED — VERIFIED 1.0 · PARTIAL 0.5 · UNVERIFIABLE 0.25 · CONTRADICTED 0.0</div>
         </div>
       </div>
-      <h4 style="font-family:var(--mono);font-size:10.5px;letter-spacing:1.2px;text-transform:uppercase;color:var(--paper-dim);margin-top:26px">History</h4>
-      <table class="docket" style="margin-top:8px"><tbody>
+      <h4 style="font-family:var(--mono);font-size:10.5px;letter-spacing:1.2px;text-transform:uppercase;color:var(--paper-dim);margin-top:26px">History (${hist.length} case${hist.length===1?'':'s'} on file)</h4>
+      ${hist.length ? `<table class="docket" style="margin-top:8px"><tbody>
         ${hist.map(c=>`<tr onclick="location.hash='#/case/${c.id}'">
           <td data-label="#"><span class="case-id">#${String(c.id).padStart(4,'0')}</span></td>
-          <td data-label="Type" style="text-transform:uppercase;font-size:10.5px;color:var(--paper-dim)">${TYPES.find(t=>t.id===c.type).label}</td>
-          <td data-label="Verdict">${c.status==='PENDING'?'—':Stamp(c.verdict,{mini:true})}</td>
+          <td data-label="Record" style="text-transform:uppercase;font-size:10.5px;color:var(--paper-dim)">Public claim</td>
+          <td data-label="Verdict">${c.verdict?Stamp(c.verdict,{mini:true}):'—'}</td>
           <td data-label="When">${timeAgo(c.filed)}</td>
         </tr>`).join('')}
-      </tbody></table>
-    </div>
-  `;
-}
+      </tbody></table>` : '<div class="empty-state" style="padding:20px">No cases for this subject in the discovered docket.</div>'}
+    </div>`;
+};
 
+/* ============================================================
+   S5 — PROTOCOL
+   ============================================================ */
 function screenProtocol(){
-  const el = document.getElementById('content');
+  const el=document.getElementById('content');
   el.innerHTML = `
     <div class="eyebrow">Protocol</div>
     <h2 class="section-title" style="margin-top:6px">How a claim becomes a record</h2>
@@ -1035,31 +1334,42 @@ function screenProtocol(){
     <table class="tax-table">
       <thead><tr><th>Verdict</th><th>Meaning</th><th>Stake consequence</th></tr></thead>
       <tbody>
-        <tr><td style="color:var(--verdict-green)">VERIFIED</td><td>The evidence held up.</td><td>Stake refunded.</td></tr>
-        <tr><td style="color:var(--verdict-amber)">PARTIALLY VERIFIED</td><td>Half the story checks out.</td><td>Stake refunded.</td></tr>
+        <tr><td style="color:var(--verdict-green)">VERIFIED</td><td>The evidence held up.</td><td>Stake refunded, minus fee.</td></tr>
+        <tr><td style="color:var(--verdict-amber)">PARTIALLY VERIFIED</td><td>Half the story checks out.</td><td>Stake refunded, minus fee.</td></tr>
         <tr><td style="color:var(--seal-red)">CONTRADICTED</td><td>The evidence says otherwise.</td><td>Stake forfeited to treasury.</td></tr>
         <tr><td style="color:var(--verdict-blue)">UNVERIFIABLE</td><td>The links went nowhere.</td><td>Stake refunded, minus fee.</td></tr>
+      </tbody>
+    </table>
+
+    <h3 style="font-family:var(--serif);font-size:20px;margin-top:44px">The on-chain API</h3>
+    <table class="tax-table">
+      <thead><tr><th>Method</th><th>Kind</th><th>Purpose</th></tr></thead>
+      <tbody>
+        <tr><td>file_claim(subject, claim_text, evidence_json)</td><td>write · payable</td><td>File a claim, stake the minimum GEN.</td></tr>
+        <tr><td>adjudicate(claim_id)</td><td>write</td><td>Fetch evidence, run the LLM jury, settle the stake.</td></tr>
+        <tr><td>appeal(claim_id)</td><td>write · payable</td><td>Re-jury at ×2, then ×4 stake, inside the 7-day window.</td></tr>
+        <tr><td>finalize(claim_id)</td><td>write</td><td>Lock the verdict after the appeal window.</td></tr>
+        <tr><td>get_claim / get_verdict / get_trust / get_trust_batch / get_stats</td><td>view</td><td>Everything this app displays.</td></tr>
       </tbody>
     </table>
 
     <h3 style="font-family:var(--serif);font-size:20px;margin-top:44px">Questions on the record</h3>
     <div id="faq"></div>
   `;
-  const faqs = [
+  const faqs=[
     ['What counts as evidence?','Any URL the contract can reach and read at adjudication time — registry pages, reports, on-chain explorers, dashboards. If the jury cannot fetch it, it cannot verify it.'],
-    ['Who pays?','The filer stakes GEN when filing. Stake is refunded unless the claim is CONTRADICTED, in which case it moves to the treasury minus the protocol fee.'],
+    ['Who pays?','The filer stakes GEN when filing. Stake is refunded (minus the protocol fee) unless the claim is CONTRADICTED, in which case it moves to the treasury.'],
     ['Can verdicts be appealed?','Yes, twice. The first appeal costs ×2 the original stake, the second ×4. Each appeal triggers re-adjudication by a fresh jury within the 7-day window.'],
-    ['What is the seal?','A subject\'s trust score, 0–100, computed from the weighted history of its verdicts. A score of 50 means no verdicts exist yet — not a middling record.'],
-    ['Is this a court?','No. It\'s a protocol. You bring the claim.'],
+    ['What is the seal?','A subject’s trust score, 0–100, computed on-chain from the weighted history of its verdicts. 50 means no verdicts exist yet — not a middling record.'],
+    ['Where does this app get its data?','Every case, verdict, score and counter is read from OathRegistry view calls over GenLayerJS (Studio network by default; Bradbury selectable). The app holds no local records and simulates nothing.'],
+    ['Is this a court?','No. It’s a protocol. You bring the claim.'],
   ];
-  document.getElementById('faq').innerHTML = faqs.map((f,i)=>`
+  document.getElementById('faq').innerHTML=faqs.map((f,i)=>`
     <div class="faq-item" data-i="${i}">
-      <button class="faq-q">${f[0]}</button>
-      <div class="faq-a"><p>${f[1]}</p></div>
+      <button class="faq-q">${esc(f[0])}</button>
+      <div class="faq-a"><p>${esc(f[1])}</p></div>
     </div>`).join('');
-  document.querySelectorAll('.faq-item').forEach(item=>{
-    item.querySelector('.faq-q').onclick = ()=>item.classList.toggle('open');
-  });
+  document.querySelectorAll('.faq-item').forEach(item=>{ item.querySelector('.faq-q').onclick=()=>item.classList.toggle('open'); });
 }
 function decisionTreeSVG(){
   return `<svg viewBox="0 0 720 200" style="width:100%;height:auto" stroke="var(--line)" stroke-width="1.4" fill="none">
@@ -1088,17 +1398,37 @@ function decisionTreeSVG(){
 /* ============================================================
    ROUTER
    ============================================================ */
-function route(){
-  const h = location.hash || '#/preflight';
+let routeToken=0;
+async function route(){
+  const token=++routeToken;
   renderRail();
   window.scrollTo(0,0);
+  const h = location.hash || '#/preflight';
+
+  // resolve the configured contract address (?contract= / localStorage) on every
+  // navigation so configuring it (or opening a ?contract= link) takes effect at once.
+  STATE.address = contractAddress();
+
+  // ensure live data before rendering data screens
+  if(STATE.address){
+    const content=document.getElementById('content');
+    if(content) content.innerHTML=`<div class="empty-state">Reading OathRegistry on ${net().label}…</div>`;
+    try { await refresh(); }
+    catch(e){ STATE.sdkError = (e&&e.message)||String(e); }
+    if(token!==routeToken) return; // a newer route superseded this render
+  } else {
+    STATE.sdkError=null;
+  }
+  renderRail(); renderTicker();
+
   if(h.startsWith('#/case/')){
-    screenCase(parseInt(h.split('/')[2]));
+    const id=parseInt(h.split('/')[2]);
+    await screenCase(id);
   } else if(h.startsWith('#/docket')){
-    screenDocket();
+    await screenDocket();
   } else if(h.startsWith('#/ledger')){
-    const parts = h.split('/');
-    screenLedger(parts[2]?decodeURIComponent(parts[2]):null);
+    const parts=h.split('/');
+    await screenLedger(parts[2]?decodeURIComponent(parts[2]):null);
   } else if(h.startsWith('#/protocol')){
     screenProtocol();
   } else {
@@ -1106,7 +1436,6 @@ function route(){
   }
 }
 window.addEventListener('hashchange', route);
-renderTicker();
 route();
 </script>
 </body>

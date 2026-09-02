@@ -58,14 +58,14 @@ oath/
 
 | Method | Kind | Purpose |
 |---|---|---|
-| `file_claim(subject, claim_text, evidence_urls)` | write·payable | file a claim, stake GEN |
+| `file_claim(subject, claim_text, evidence_json)` | write·payable | file a claim, stake GEN (`evidence_json` is a JSON array string of URLs) |
 | `adjudicate(claim_id)` | write | run the jury (web + LLM + consensus), settle stake, update trust |
 | `appeal(claim_id)` | write·payable | re-jury with higher stake (×2, ×4) |
 | `finalize(claim_id)` | write | lock verdict after appeal window |
 | `get_claim(claim_id)` | view | full claim record |
 | `get_verdict(claim_id)` | view | verdict + rationale + citations |
 | `get_trust(subject)` | view | **the trust score** (0–100, 50 = no data) |
-| `get_trust_batch(subjects)` | view | batch scores |
+| `get_trust_batch(subjects_json)` | view | batch scores (JSON array string in, JSON string out) |
 | `get_stats()` | view | counters + treasury |
 
 Constructor knobs: `min_stake`, `fee_bps`, `max_evidence`, `max_appeals`,
@@ -117,29 +117,67 @@ step, no framework). Open it directly, or serve the folder
 > copies in sync after any frontend edit (`cp app/index.html index.html`).
 > Without the root `index.html`, Pages renders the README instead of the app.
 
-It implements the full brief (`docs/FRONTEND_BRIEF.md`) as a hash-routed SPA:
+It is a **live, contract-backed** hash-routed SPA. It ships **no seeded cases**
+and **simulates nothing** — every case, verdict, trust score, counter and status
+on screen is read from the deployed OathRegistry via the documented
+[GenLayerJS](https://docs.genlayer.com/api-references/genlayer-js) read/write
+flow against GenLayer **Bradbury** testnet.
 
-| Route | Screen |
-|---|---|
-| `#/preflight` | File a case: subject, claim, Exhibit A–E evidence rows, claim-type chips; the exhibit board replays fetch → jury → stamp → seal |
-| `#/docket` | Live ledger: sortable/filterable table of all 14 seeded cases |
-| `#/case/:id` | Case file: folder tab, verdict stamp, exhibit tabs with 200/404 status chips, typewriter jury transcript, appeal (×2/×4) + finalize |
-| `#/ledger` | Trust explorer: `get_trust("…")` scan bar, wax-seal score, run-rate breakdown, subject history |
-| `#/protocol` | The three pillars, decision-tree SVG, verdict taxonomy, FAQ |
+| Route | Screen | Contract source |
+|---|---|---|
+| `#/preflight` | File a case: subject, claim, Exhibit A–E evidence rows; the board explains the on-chain fetch → jury → stamp → seal flow | `file_claim` (payable, min stake from `get_stats`) |
+| `#/docket` | Sortable/filterable ledger of every case | discovered from `get_claim(1…N)` until the first missing id; counters from `get_stats()` |
+| `#/case/:id` | Case file: verdict stamp, exhibits, typewriter jury transcript + citations, RUN JURY / appeal (×2/×4) / finalize | `get_claim` · `get_verdict` · `adjudicate` · `appeal` · `finalize`; seal from `get_trust` |
+| `#/ledger` | Trust explorer: `get_trust("…")` scan bar, wax-seal score, run-rate breakdown, subject history | `get_trust` · `get_trust_batch` |
+| `#/protocol` | The three pillars, decision-tree SVG, verdict taxonomy, on-chain API table, FAQ | — |
 
-- **Demo mode is the default** (persistent `● DEMO — OFFLINE RECORDS` badge):
-  14 seeded cases across all six claim types and subjects with real-looking
-  verdict rationales; filing a new case plays the full jury flow and updates the
-  docket + subject seal. Zero network, zero keys.
-- **Design system** per brief §3: ink/paper palette, Fraunces + IBM Plex Mono,
-  ink-stamp verdicts, wax-seal scores, paper grain, wire ticker. Fonts load from
-  Google Fonts CDN with `Georgia`/`ui-monospace` fallbacks — in the sandboxed
-  preview the fallbacks render; served normally, the real fonts load.
-- **Live mode** (wiring): swap the in-file demo calls for the typed client in
-  `genlayer-js` (`createClient({ chain: testnetBradbury })` → `readContract` /
-  `writeContract` / `waitForTransactionReceipt`), with
-  `VITE_OATH_CONTRACT` = deployed `OathRegistry` address. Exact signatures and
-  the contract→type mapping are in `docs/FRONTEND_BRIEF.md` §5 + §8.
+**GenLayerJS flow (exactly as documented):**
+
+```js
+// reads — no wallet needed
+const { createClient, testnetBradbury } = await import('genlayer-js');
+const readClient = createClient({ chain: testnetBradbury });
+const trust = await readClient.readContract({
+  address: OATH_ADDRESS, functionName: 'get_trust', args: [subject], stateStatus: 'accepted',
+});
+
+// writes — EIP-1193 wallet (MetaMask) on Bradbury
+const writeClient = createClient({ chain: testnetBradbury, account, provider: window.ethereum });
+await writeClient.connect('testnetBradbury');                 // adds/switches chain 4221
+const tx = await writeClient.writeContract({
+  address: OATH_ADDRESS, functionName: 'file_claim',
+  args: [subject, claimText, JSON.stringify(evidenceUrls)],
+  value: 10n * 10n ** 18n,                                    // 10 GEN minimum stake
+});
+const receipt = await writeClient.waitForTransactionReceipt({
+  hash: tx.transactionHash, status: TransactionStatus.FINALIZED,
+});
+// receipt.txExecutionResultName must === ExecutionResult.FINISHED_WITH_RETURN,
+// then the app RE-READS state from contract views (no optimistic local records).
+```
+
+- **Configuration is runtime-only** (no build step for GitHub Pages). The app
+  ships pre-pointed at the deployed **Studio-network** contract
+  `0xe9B73DD18446a1f121090a21C544D51349a1e8Ad`, so opening
+  `https://timmyspurs12.github.io/OATH/` immediately shows the live docket
+  (case #1: *"CertiK audits top blockchain projects"* → PARTIALLY_VERIFIED, 71).
+  Switch **STUDIO / BRADBURY** from the left rail, or open with
+  `?network=bradbury&contract=0x…`; the network and address persist to
+  `localStorage`. Reads work with no wallet; the wallet is only requested for
+  writes (on Studionet MetaMask uses chain 61999, RPC `https://studio.genlayer.com/api`;
+  on Bradbury chain 4221).
+- **Source-of-truth rule:** the UI never invents state. The contract does not
+  persist a claim-type field or evidence HTTP status/content, so the live UI
+  labels cases `PUBLIC CLAIM` and exhibits `ON-CHAIN EVIDENCE` rather than
+  fabricating values.
+- **Appeal stake is derived from the contract**, not hard-coded: the extra stake
+  = `stake × appeal_multiplier^(appeal_count+1)` (×2 then ×4), matching
+  `OathRegistry.appeal`.
+- **Design system** per `docs/FRONTEND_BRIEF.md` §3: ink/paper palette, Fraunces +
+  IBM Plex Mono, ink-stamp verdicts, wax-seal scores, paper grain, wire ticker.
+  Fonts load from Google Fonts with `Georgia`/`ui-monospace` fallbacks.
+- `tools/offline_demo.py` remains an isolated developer utility for previewing
+  the jury prompt; it is **not** imported or used by the frontend.
 
 ## The jury (the actual product)
 

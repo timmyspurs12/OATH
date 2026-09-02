@@ -1,6 +1,26 @@
 # OATH — Frontend Build Brief (v1)
 
-> **Delivered build:** this brief was implemented as a single-file SPA at
+> **✅ LIVE INTEGRATION SHIPPED (current `app/index.html`).** The frontend now
+> implements the §8 GenLayerJS read/write flow for real: it loads
+> `genlayer-js` from an ESM CDN (no build step), reads all state from
+> OathRegistry views (`get_claim` discovery for the docket, `get_verdict`,
+> `get_trust`, `get_trust_batch`, `get_stats`), and sends real writes
+> (`file_claim` payable with the minimum stake, `adjudicate`, `appeal` with the
+> contract-derived ×2/×4 stake, `finalize`) through an EIP-1193 wallet on
+> GenLayer Bradbury — waiting for `FINALIZED`, checking
+> `txExecutionResultName === FINISHED_WITH_RETURN`, then re-reading from chain.
+> The §7 seeded `DemoClient` and all simulated verdicts/fetches/appeals were
+> **removed**; cases read `PUBLIC CLAIM` and exhibits read `ON-CHAIN EVIDENCE`
+> because the contract does not persist those fields. Contract address is set at
+> runtime via `?contract=0x…` or the **CONFIGURE CONTRACT** control (persisted to
+> `localStorage`); reads need no wallet. Verified with `node --check` and a jsdom
+> runtime smoke test driving file → adjudicate → appeal → finalize against an
+> in-memory OathRegistry — 0 console errors.
+>
+> The brief below is kept as the original design specification (§7's demo mode
+> was superseded by the live integration above).
+
+> **Original delivered build:** this brief was implemented as a single-file SPA at
 > `app/index.html` (no build step, demo-mode default, hash routes, seeded
 > 14-case docket, ink-stamp verdicts, wax-seal scores). Verified: JS syntax
 > clean, `node --check` + jsdom runtime smoke test — 0 console errors across
