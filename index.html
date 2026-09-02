@@ -678,31 +678,38 @@ async function loadAll(){
   if(!STATE.address){ STATE.cases=[]; STATE.stats=null; return; }
   await ensureReadClient();
 
-  // stats first — gives us the authoritative filed count
-  let statsFail = false;
-  try { STATE.stats = mapStats(await readView('get_stats', [])); }
-  catch(e){ STATE.stats = null; statsFail = isNetworkError(e); }
+  // stats + the first page of claims at the same time (stats gives the
+  // authoritative filed count, but we don't wait on it to start reading).
+  const BATCH = 5;
+  const statsP = readView('get_stats', [])
+    .then(r => { STATE.stats = mapStats(r); return true; })
+    .catch(e => { STATE.stats = null; return !isNetworkError(e) ? true : false; });
 
-  // discover the docket: get_claim(1..N) until the first missing id.
-  // next_id is monotonic and claims are never deleted, so this is a
-  // deterministic view-only discovery strategy. A network/contract error is
-  // NOT treated as "end of docket" — it flags a read failure instead.
-  const high = STATE.stats ? STATE.stats.claimsFiled : 0;
+  // discover the docket in PARALLEL pages: get_claim(1..N) until the first
+  // missing id. next_id is monotonic and claims are never deleted, so this is
+  // a deterministic view-only discovery — but running each page concurrently
+  // cuts load time from ~N serial RPC round-trips to a handful of pages.
   const cases = [];
   const subjects = new Set();
-  let id = 1;
-  const cap = Math.max(high + 2, 3);
   let readFail = false;
-  while(id <= cap + 5){
-    let raw;
-    try { raw = await readView('get_claim', [id]); }
-    catch(e){ if(isNetworkError(e)) readFail = true; break; }  // connectivity -> flag
-    if(!raw || raw.subject == null) break;                     // genuine end of docket
-    const c = mapClaim(raw);
-    cases.push(c);
-    if(c.subject) subjects.add(c.subject);
-    id++;
+  for(let start = 1; ; start += BATCH){
+    const ids = Array.from({length: BATCH}, (_,k) => start+k);
+    const results = await Promise.all(ids.map(async id => {
+      try { return { id, raw: await readView('get_claim', [id]) }; }
+      catch(e){ return { id, err: e }; }
+    }));
+    for(const r of results){
+      if(r.err){ if(isNetworkError(r.err)) readFail = true; r.__end = true; continue; }
+      if(!r.raw || r.raw.subject == null){ r.__end = true; continue; }
+      const c = mapClaim(r.raw);
+      cases.push(c);
+      if(c.subject) subjects.add(c.subject);
+    }
+    const hitEnd = results.some(r => r.__end);
+    if(hitEnd) break;
   }
+  const statsFail = !(await statsP);
+  cases.sort((a,b)=> a.id - b.id);
   STATE.cases = cases;
   STATE.subjects = subjects;
   // Only surface a blocking read error when we loaded nothing despite a
@@ -716,7 +723,16 @@ async function loadAll(){
   }
 }
 
-async function refresh(){ await loadAll(); }
+let lastFullLoad = 0;
+const CACHE_MS = 15000;
+// Re-load from chain, but use a short-lived cache so moving between tabs does
+// not re-fetch the whole docket every navigation (forced=true bypasses it).
+async function refresh(force=false){
+  if(!force && Date.now() - lastFullLoad < CACHE_MS && STATE.cases.length>=0 && STATE.address) return;
+  await loadAll();
+  lastFullLoad = Date.now();
+}
+function invalidateCache(){ lastFullLoad = 0; }
 
 async function getTrust(subject){
   try { return mapTrust(await readView('get_trust', [subject])); }
@@ -743,8 +759,8 @@ function timeAgo(iso){
   if(diff < 86400) return Math.round(diff/3600)+'h ago';
   return Math.round(diff/86400)+'d ago';
 }
-function utc(iso){ if(!iso) return '—'; const d=new Date(iso); return Number.isFinite(d)? d.toISOString().slice(11,19)+' UTC' : '—'; }
-function dateShort(iso){ if(!iso) return '—'; const d=new Date(iso); return Number.isFinite(d)? d.toISOString().slice(0,10) : '—'; }
+function utc(iso){ if(!iso) return '—'; const d=new Date(iso); return Number.isFinite(d.getTime())? d.toISOString().slice(11,19)+' UTC' : '—'; }
+function dateShort(iso){ if(!iso) return '—'; const d=new Date(iso); return Number.isFinite(d.getTime())? d.toISOString().slice(0,10) : '—'; }
 function esc(s){ return String(s??'').replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
 
 function Stamp(verdictCode, {mini=false, landing=false}={}){
@@ -1034,8 +1050,8 @@ async function fileClaim(){
     const { hash: fileHash } = await sendWrite('file_claim', [subject, claim, JSON.stringify(urls)], stakeWei);
     toast('file_claim finalized: '+shortAddr(fileHash));
 
-    // discover the new case id from the chain (re-read stats + claims)
-    await refresh();
+    // discover the new case id from the chain (force a fresh read post-write)
+    await refresh(true);
     const created = STATE.cases.filter(c=>c.subject===subject).sort((a,b)=>b.id-a.id)[0];
     const caseId = created ? created.id : (STATE.stats?STATE.stats.claimsFiled:1);
     renderPreflightBoard({stage:1, caseId, stake:fmtGEN(stakeWei)});
@@ -1103,7 +1119,7 @@ async function screenDocket(){
   document.querySelectorAll('.fchip').forEach(c=>c.onclick=()=>{ docketFilter=docketFilter===c.dataset.v?null:c.dataset.v; screenDocket(); });
   document.getElementById('dsearch').oninput=(e)=>{ docketSearch=e.target.value; renderDocketBody(); };
   document.querySelectorAll('table.docket thead th[data-k]').forEach(th=>th.onclick=()=>{ const k=th.dataset.k; docketSort.dir=docketSort.key===k?-docketSort.dir:-1; docketSort.key=k; renderDocketBody(); });
-  const doRefresh=async ()=>{ await refresh(); renderRail(); renderTicker(); screenDocket(); };
+  const doRefresh=async ()=>{ await refresh(true); renderRail(); renderTicker(); screenDocket(); };
   const rBtn=document.getElementById('docketRefresh');
   if(rBtn) rBtn.onclick=async (e)=>{ e.target.disabled=true; e.target.textContent='READING CHAIN…'; await doRefresh(); };
   const retryBtn=document.getElementById('docketRetry');
@@ -1256,7 +1272,7 @@ async function runWrite(method, args, valueWei, btn, msgEl, okNote){
     msgEl.className='file-msg ok';
     msgEl.innerHTML = `${esc(okNote||'Done.')} <span style="color:var(--paper-dim)">tx ${shortAddr(hash)}. Re-reading state from contract views…</span>`;
     clearBusy(btn);
-    await refresh();
+    await refresh(true);
     renderRail(); renderTicker();
     // re-render the current case from fresh chain state
     const m = location.hash.match(/#\/case\/(\d+)/);
