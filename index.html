@@ -512,10 +512,28 @@ function num(v){ if(v==null) return 0; if(typeof v==='bigint') return Number(v);
 function fmtGEN(wei){ return (Number(BigInt(num(wei)))/1e18).toFixed(2) + ' GEN'; }
 function shortAddr(a){ if(!a) return '—'; return a.slice(0,6)+'…'+a.slice(-4); }
 
-async function readView(functionName, args=[]){
+async function readView(functionName, args=[], tries=3){
   const { readClient, address } = STATE;
   if(!readClient || !address) throw new Error('no contract');
-  return await readClient.readContract({ address, functionName, args, stateStatus: 'accepted' });
+  let lastErr;
+  for(let i=0;i<tries;i++){
+    try {
+      return await readClient.readContract({ address, functionName, args, stateStatus: 'accepted' });
+    } catch(e){
+      lastErr = e;
+      // genuine "no such claim" => stop immediately (caller ends discovery)
+      const m = String(e?.message||e);
+      if(/claim not found|Missing or invalid parameters|execution failed|not found at address/i.test(m)) throw e;
+      // transient RPC/network error => back off and retry
+      await new Promise(r=>setTimeout(r, 700*(i+1)));
+    }
+  }
+  throw lastErr;
+}
+// A failed read is a connectivity/contract problem, NOT the end of the docket.
+function isNetworkError(e){
+  const m = String(e?.message||e);
+  return !/claim not found|Missing or invalid parameters|execution failed|not found at address/i.test(m);
 }
 
 function sdkChainFor(sdk, networkKey){
@@ -646,26 +664,30 @@ async function loadAll(){
   STATE.network = networkKey();
   STATE.address = contractAddress();
   STATE.readClient = null;  // rebuild client for the selected network
+  STATE.readError = null;
   if(!STATE.address){ STATE.cases=[]; STATE.stats=null; return; }
   await ensureReadClient();
 
   // stats first — gives us the authoritative filed count
+  let statsFail = false;
   try { STATE.stats = mapStats(await readView('get_stats', [])); }
-  catch(e){ STATE.stats = null; }
+  catch(e){ STATE.stats = null; statsFail = isNetworkError(e); }
 
   // discover the docket: get_claim(1..N) until the first missing id.
   // next_id is monotonic and claims are never deleted, so this is a
-  // deterministic view-only discovery strategy.
+  // deterministic view-only discovery strategy. A network/contract error is
+  // NOT treated as "end of docket" — it flags a read failure instead.
   const high = STATE.stats ? STATE.stats.claimsFiled : 0;
   const cases = [];
   const subjects = new Set();
   let id = 1;
-  const cap = Math.max(high + 1, 1);
+  const cap = Math.max(high + 2, 3);
+  let readFail = false;
   while(id <= cap + 5){
     let raw;
     try { raw = await readView('get_claim', [id]); }
-    catch(_) { break; }            // "claim not found" -> end of docket
-    if(!raw || raw.subject == null) break;
+    catch(e){ if(isNetworkError(e)) readFail = true; break; }  // connectivity -> flag
+    if(!raw || raw.subject == null) break;                     // genuine end of docket
     const c = mapClaim(raw);
     cases.push(c);
     if(c.subject) subjects.add(c.subject);
@@ -673,6 +695,12 @@ async function loadAll(){
   }
   STATE.cases = cases;
   STATE.subjects = subjects;
+  if(readFail || (statsFail && cases.length===0)){
+    STATE.readError = `Could not read OathRegistry from ${net().label}. Check your connection, the contract address, and that the contract is deployed on the selected network.`;
+    STATE.sdkError = STATE.readError;
+  } else {
+    STATE.sdkError = null;
+  }
 }
 
 async function refresh(){ await loadAll(); }
@@ -1039,6 +1067,9 @@ async function screenDocket(){
     <div class="eyebrow">The docket</div>
     <h2 class="section-title" style="margin-top:6px">All cases on record</h2>
     <p class="section-sub">Discovered from get_claim(1…N) — the registry’s own ledger.</p>
+    ${STATE.readError ? `<div class="demo-banner" style="border-left-color:var(--seal-red);margin-bottom:14px">
+      <b style="color:var(--seal-red)">Could not reach the contract.</b> ${esc(STATE.readError)}
+      <br><button class="ghost-btn" style="margin-top:8px" id="docketRetry">↻ RETRY / RE-READ FROM CHAIN</button></div>` : ''}
     <div class="docket-toolbar">
       <div class="filter-chips" id="fchips">
         ${['VERIFIED','PARTIAL','CONTRADICTED','UNVERIFIABLE','APPEALING','PENDING'].map(v=>`<button class="fchip ${docketFilter===v?'on':''}" data-v="${v}">${v}</button>`).join('')}
@@ -1059,7 +1090,11 @@ async function screenDocket(){
   document.querySelectorAll('.fchip').forEach(c=>c.onclick=()=>{ docketFilter=docketFilter===c.dataset.v?null:c.dataset.v; screenDocket(); });
   document.getElementById('dsearch').oninput=(e)=>{ docketSearch=e.target.value; renderDocketBody(); };
   document.querySelectorAll('table.docket thead th[data-k]').forEach(th=>th.onclick=()=>{ const k=th.dataset.k; docketSort.dir=docketSort.key===k?-docketSort.dir:-1; docketSort.key=k; renderDocketBody(); });
-  document.getElementById('docketRefresh').onclick=async (e)=>{ e.target.disabled=true; e.target.textContent='READING CHAIN…'; await refresh(); renderRail(); renderTicker(); renderDocketBody(); e.target.disabled=false; e.target.textContent='↻ REFRESH FROM CHAIN'; };
+  const doRefresh=async ()=>{ await refresh(); renderRail(); renderTicker(); screenDocket(); };
+  const rBtn=document.getElementById('docketRefresh');
+  if(rBtn) rBtn.onclick=async (e)=>{ e.target.disabled=true; e.target.textContent='READING CHAIN…'; await doRefresh(); };
+  const retryBtn=document.getElementById('docketRetry');
+  if(retryBtn) retryBtn.onclick=async ()=>{ retryBtn.textContent='READING CHAIN…'; await doRefresh(); };
   renderDocketBody();
 }
 
@@ -1436,6 +1471,10 @@ async function route(){
   }
 }
 window.addEventListener('hashchange', route);
+// Re-read from the chain when you return to the tab (e.g. right after filing
+// in Studio / the wallet), so fresh verdicts show up without a hard refresh.
+let lastRefresh = Date.now();
+document.addEventListener('visibilitychange', ()=>{ if(!document.hidden && Date.now()-lastRefresh>8000){ lastRefresh=Date.now(); route(); } });
 route();
 </script>
 </body>
