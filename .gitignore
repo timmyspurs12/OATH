@@ -3,3 +3,6 @@ __pycache__/
 .venv/
 node_modules/
 .DS_Store
+.oath_demo_account.key
+.env
+.pytest_cache/

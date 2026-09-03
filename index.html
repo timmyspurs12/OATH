@@ -439,7 +439,7 @@ const NETWORKS = {
   },
 };
 const DEFAULT_NETWORK = 'studionet';
-const DEFAULT_CONTRACT = '0xe9B73DD18446a1f121090a21C544D51349a1e8Ad';
+const DEFAULT_CONTRACT = '0xa2d713801fe8AFf758446680550ab6785317bFE6';
 const FAUCET = 'https://testnet-faucet.genlayer.foundation/';
 const GEN = 10n ** 18n;
 
@@ -485,6 +485,7 @@ const STATE = {
   sdkError: null,
   cases: [],            // mapped from get_claim(1..N)
   stats: null,          // get_stats()
+  appealTerms: null,    // get_appeal_terms()
   subjects: new Set(),  // discovered subjects
   loading: false,
 };
@@ -643,6 +644,20 @@ function mapClaim(raw){
     appeals: num(raw.appeals),
     filed: raw.created_at || '',
     adjudicatedAt: raw.adjudicated_at || '',
+    // deferred-settlement fields (read straight from the contract)
+    baseStakeWei: raw.base_stake_wei !== undefined ? BigInt(num(raw.base_stake_wei)) : BigInt(num(raw.stake_wei)),
+    refundOwedWei: raw.refund_owed_wei !== undefined ? BigInt(num(raw.refund_owed_wei)) : 0n,
+    nextAppealStakeWei: raw.next_appeal_stake_wei !== undefined ? BigInt(num(raw.next_appeal_stake_wei)) : 0n,
+    verdictFinal: raw.verdict_final === true || raw.verdict_final === 'true',
+    settled: raw.settled === true || raw.settled === 'true' || raw.settled === 1,
+  };
+}
+function mapAppealTerms(raw){
+  return {
+    maxAppeals: num(raw.max_appeals),
+    multiplier: num(raw.appeal_multiplier),
+    windowDays: num(raw.appeal_window_days),
+    minStakeWei: BigInt(num(raw.min_stake_wei)),
   };
 }
 function mapTrust(raw){
@@ -684,6 +699,9 @@ async function loadAll(){
   const statsP = readView('get_stats', [])
     .then(r => { STATE.stats = mapStats(r); return true; })
     .catch(e => { STATE.stats = null; return !isNetworkError(e) ? true : false; });
+  const termsP = readView('get_appeal_terms', [])
+    .then(r => { STATE.appealTerms = mapAppealTerms(r); return true; })
+    .catch(() => { STATE.appealTerms = null; return true; });
 
   // discover the docket in PARALLEL pages: get_claim(1..N) until the first
   // missing id. next_id is monotonic and claims are never deleted, so this is
@@ -943,6 +961,10 @@ function screenPreflight(){
   if(!STATE.address){ el.innerHTML = configGate(); wireGate(); renderPreflightBoard(null); return; }
   const minStake = STATE.stats ? fmtGEN(STATE.stats.minStakeWei) : '10.00 GEN';
   const feePct = STATE.stats ? (STATE.stats.feeBps/100).toFixed(1)+'%' : '5%';
+  const t = STATE.appealTerms;
+  const appealLine = t
+    ? ` · appeals ${t.maxAppeals} (×${t.multiplier} extra each: ${fmtGEN(t.minStakeWei*BigInt(t.multiplier))}, ${fmtGEN(t.minStakeWei*BigInt(t.multiplier)**2n)}) · window ${t.windowDays} days`
+    : ' · appeals 2 (×2/×4 extra) · window 7 days';
   el.innerHTML = `
     <div class="hero-grid">
       <div>
@@ -965,7 +987,7 @@ function screenPreflight(){
           <button type="button" class="ghost-btn" id="addEx">+ ADD EXHIBIT</button>
 
           <button type="submit" class="submit-btn" id="fileBtn">File case →</button>
-          <div class="stake-line">stake ${minStake} · refunded unless CONTRADICTED · fee ${feePct} · paid to OathRegistry on ${net().label}</div>
+          <div class="stake-line">stake ${minStake} · refunded minus fee unless CONTRADICTED${appealLine} · fee ${feePct} · on ${net().label}</div>
           <div id="fileMsg" class="file-msg"></div>
         </form>
       </div>
@@ -1132,7 +1154,7 @@ function DocketRow(c){
     <td data-label="#"><span class="case-id">#${String(c.id).padStart(4,'0')}</span></td>
     <td data-label="Subject" class="subj-cell">${esc(c.subject)}</td>
     <td data-label="Record"><span class="rec-chip">PUBLIC CLAIM</span></td>
-    <td data-label="Status"><span class="status-txt" style="color:${c.status==='PENDING'?'var(--paper-dim)':'var(--paper)'}">${esc(c.status)}</span></td>
+    <td data-label="Status"><span class="status-txt" style="color:${c.status==='PENDING'?'var(--paper-dim)':'var(--paper)'}">${esc(c.status)}</span>${c.status==='VERDICTED'?' <span style="color:var(--gold);font-family:var(--mono);font-size:10px">· PROVISIONAL</span>':''}${c.status==='FINAL'&&c.refundOwedWei>0n?' <span style="color:var(--verdict-green);font-family:var(--mono);font-size:10px">· REFUND '+fmtGEN(c.refundOwedWei)+'</span>':''}</td>
     <td data-label="Verdict">${c.status==='PENDING'||c.verdict===0?'<span style="color:var(--paper-dim)">—</span>':Stamp(c.verdict,{mini:true})}</td>
     <td data-label="Confidence" class="conf-cell" style="color:${c.confidence?(c.confidence>=70?'var(--verdict-green)':c.confidence>=40?'var(--verdict-amber)':'var(--seal-red)'):'var(--paper-dim)'}">${c.confidence?c.confidence+'%':'—'}</td>
     <td data-label="Filed">${utc(c.filed)}</td>
@@ -1179,12 +1201,21 @@ async function screenCase(id){
   const c = mapClaim(raw);
   const trust = await getTrust(c.subject);
 
-  // appeal stake mirrors the contract: extra = stake * multiplier^(appeal_count+1)
-  const multiplier = 2n;
-  const nextAppealExtra = c.appeals < 2 ? c.stakeWei * (multiplier ** BigInt(c.appeals+1)) : 0n;
-  const canAppeal = c.status==='VERDICTED';
-  const canFinalize = (c.status==='VERDICTED' || c.status==='APPEALING');
+  // Appeal terms come from the CONTRACT (get_appeal_terms), with production
+  // defaults as a fallback for older deployments that lack the view.
+  const terms = STATE.appealTerms || { maxAppeals: 2, multiplier: 2, windowDays: 7, minStakeWei: 10n * 10n**18n };
+  const maxAppeals = terms.maxAppeals;
+  // The contract quotes the exact next-appeal stake (priced off the ORIGINAL
+  // filing stake: base x multiplier^n). Prefer that; fall back to local math.
+  const mult = BigInt(terms.multiplier || 2);
+  const localNext = c.appeals < maxAppeals ? c.baseStakeWei * (mult ** BigInt(c.appeals+1)) : 0n;
+  const nextAppealExtra = c.nextAppealStakeWei > 0n ? c.nextAppealStakeWei : localNext;
+  const canAppeal = c.status==='VERDICTED' && c.appeals < maxAppeals;
+  const canFinalize = c.status==='VERDICTED';
   const canAdjudicate = (c.status==='PENDING' || c.status==='APPEALING');
+  const isOwner = (STATE.account||'').toLowerCase() === (c.requester||'').toLowerCase();
+  const canClaimRefund = c.status==='FINAL' && c.refundOwedWei > 0n && isOwner;
+  const provisionallyVerdicted = c.status==='VERDICTED' && !c.verdictFinal;
 
   el.innerHTML = `
     <div class="folder">
@@ -1198,7 +1229,7 @@ async function screenCase(id){
             <span>BY <a href="${explorerAddr(c.requester)}" target="_blank" rel="noopener" style="color:var(--verdict-blue)">${shortAddr(c.requester)}</a></span>
             <span>STAKE ${fmtGEN(c.stakeWei)}</span>
             <span>RECORD PUBLIC CLAIM</span>
-            <span>APPEALS ${c.appeals}/2</span>
+            <span>APPEALS ${c.appeals}/${maxAppeals}</span>
           </div>
         </div>
         <div class="sidecol">
@@ -1211,11 +1242,16 @@ async function screenCase(id){
             ${SealScore(c.subject, trust.score, 76)}
             <div class="sc-row" style="line-height:1.7">SEAL SCORE<br>OF <b>${esc(c.subject)}</b><br><span style="color:var(--paper-dim)">from get_trust()</span></div>
           </div>
+          ${c.status==='VERDICTED' && c.appeals>=maxAppeals ? `<div style="font-family:var(--mono);font-size:11px;color:var(--paper-dim)">ALL ${maxAppeals} APPEALS USED — verdict ready to finalize</div>`:''}
+          ${provisionallyVerdicted ? `<div style="font-family:var(--mono);font-size:11px;color:var(--gold)">PROVISIONAL — verdict not yet on trust record<br>Appeal within ${terms.windowDays} day${terms.windowDays===1?'':'s'}, or finalize after</div>`:''}
           ${canAdjudicate ? `<button class="action-btn" id="btnAdj">${c.status==='APPEALING'?'RE-RUN JURY (re-adjudicate)':'Run jury — adjudicate()'}</button>` : ''}
-          ${canAppeal ? `<button class="action-btn" id="btnAppeal">Submit appeal — stake ${fmtGEN(nextAppealExtra)} (×${c.appeals===0?2:4})</button>` : ''}
+          ${canAppeal ? `<button class="action-btn" id="btnAppeal">Submit appeal — stake ${fmtGEN(nextAppealExtra)} (×${mult**BigInt(c.appeals+1)}, from contract)</button>` : ''}
           ${c.status==='APPEALING' ? `<button class="action-btn" disabled>APPEAL OPEN — RE-RUN JURY</button>` : ''}
           ${c.status==='FINAL' ? `<button class="action-btn" disabled>FINAL — RECORD LOCKED</button>`
-            : canFinalize ? `<button class="action-btn" id="btnFinal">Finalize — lock verdict</button>` : ''}
+            : canFinalize ? `<button class="action-btn" id="btnFinal">Finalize — lock verdict & settle stake</button>` : ''}
+          ${c.status==='FINAL' && c.refundOwedWei>0n ? `<div style="font-family:var(--mono);font-size:12px;color:var(--verdict-green);margin:8px 0">REFUND DUE: ${fmtGEN(c.refundOwedWei)} (stake minus fee)${isOwner?'':' · only the filer can claim'}</div>`:''}
+          ${c.status==='FINAL' && c.verdict===3 ? `<div style="font-family:var(--mono);font-size:12px;color:var(--verdict-red);margin:8px 0">CONTRADICTED — stake forfeited to treasury, no refund.</div>`:''}
+          ${canClaimRefund ? `<button class="action-btn" id="btnRefund">Claim refund — ${fmtGEN(c.refundOwedWei)} to your wallet</button>` : ''}
           <div id="caseMsg" class="file-msg"></div>
         </div>
       </div>
@@ -1247,10 +1283,11 @@ async function screenCase(id){
   if(c.status!=='PENDING' && c.status!=='ADJUDICATING' && c.rationale) typewrite(document.getElementById('transcriptBody'), c.rationale);
 
   const msg=document.getElementById('caseMsg');
-  const btnAdj=document.getElementById('btnAdj'), btnAppeal=document.getElementById('btnAppeal'), btnFinal=document.getElementById('btnFinal');
+  const btnAdj=document.getElementById('btnAdj'), btnAppeal=document.getElementById('btnAppeal'), btnFinal=document.getElementById('btnFinal'), btnRefund=document.getElementById('btnRefund');
   if(btnAdj) btnAdj.onclick=()=>runWrite('adjudicate', [c.id], 0n, btnAdj, msg, 'Jury convening — the contract is fetching evidence and reaching consensus. This can take 30–90s…');
   if(btnAppeal) btnAppeal.onclick=()=>runWrite('appeal', [c.id], nextAppealExtra, btnAppeal, msg, 'Appeal submitted; status is now APPEALING. Re-run the jury to re-adjudicate.');
-  if(btnFinal) btnFinal.onclick=()=>runWrite('finalize', [c.id], 0n, btnFinal, msg, 'Finalize submitted — the record will be locked.');
+  if(btnFinal) btnFinal.onclick=()=>runWrite('finalize', [c.id], 0n, btnFinal, msg, 'Finalize submitted — the verdict is being locked and the stake settled.');
+  if(btnRefund) btnRefund.onclick=()=>runWrite('claim_refund', [c.id], 0n, btnRefund, msg, 'Refund claimed — GEN is being transferred from escrow to your wallet.');
 }
 
 /* Evidence display: the contract does NOT persist HTTP status/content,
@@ -1410,10 +1447,11 @@ function screenProtocol(){
       <thead><tr><th>Method</th><th>Kind</th><th>Purpose</th></tr></thead>
       <tbody>
         <tr><td>file_claim(subject, claim_text, evidence_json)</td><td>write · payable</td><td>File a claim, stake the minimum GEN.</td></tr>
-        <tr><td>adjudicate(claim_id)</td><td>write</td><td>Fetch evidence, run the LLM jury, settle the stake.</td></tr>
-        <tr><td>appeal(claim_id)</td><td>write · payable</td><td>Re-jury at ×2, then ×4 stake, inside the 7-day window.</td></tr>
-        <tr><td>finalize(claim_id)</td><td>write</td><td>Lock the verdict after the appeal window.</td></tr>
-        <tr><td>get_claim / get_verdict / get_trust / get_trust_batch / get_stats</td><td>view</td><td>Everything this app displays.</td></tr>
+        <tr><td>adjudicate(claim_id)</td><td>write</td><td>Fetch evidence and run the LLM jury. Records a <b>provisional</b> verdict — trust scores are NOT updated yet.</td></tr>
+        <tr><td>appeal(claim_id)</td><td>write · payable</td><td>Re-jury at ×2, then ×4 the original stake, inside the appeal window.</td></tr>
+        <tr><td>finalize(claim_id)</td><td>write</td><td>Lock the FINAL verdict. <b>This is the only point</b> where the trust record updates and the stake settles (refund or forfeit).</td></tr>
+        <tr><td>claim_refund(claim_id)</td><td>write</td><td>Filer withdraws their stake (minus fee) once the claim is FINAL.</td></tr>
+        <tr><td>get_claim / get_appeal_terms / get_accounting / get_verdict / get_trust / get_trust_batch / get_stats</td><td>view</td><td>Everything this app displays — including refund owed and the contract's appeal price tiers.</td></tr>
       </tbody>
     </table>
 
@@ -1422,8 +1460,9 @@ function screenProtocol(){
   `;
   const faqs=[
     ['What counts as evidence?','Any URL the contract can reach and read at adjudication time — registry pages, reports, on-chain explorers, dashboards. If the jury cannot fetch it, it cannot verify it.'],
-    ['Who pays?','The filer stakes GEN when filing. Stake is refunded (minus the protocol fee) unless the claim is CONTRADICTED, in which case it moves to the treasury.'],
-    ['Can verdicts be appealed?','Yes, twice. The first appeal costs ×2 the original stake, the second ×4. Each appeal triggers re-adjudication by a fresh jury within the 7-day window.'],
+    ['Who pays?','The filer stakes GEN when filing. It sits in escrow. When the claim is finalized, the stake is refunded (minus the protocol fee) via claim_refund unless the claim is CONTRADICTED — then the whole stake moves to the treasury. The refund amount is shown on the case and can only be claimed by the filer once the record is FINAL.'],
+    ['Why is a verdict "provisional"?','adjudicate() records the jury’s verdict but does not touch trust scores or the stake. An appealed verdict is replaced by the re-jury, never double-counted. Only finalize() — callable after the appeal window passes or all appeals are used — locks the FINAL verdict, updates the seal, and settles the stake.'],
+    ['Can verdicts be appealed?','Yes, up to the contract-configured maximum (default 2). Each appeal is priced off the ORIGINAL filing stake: ×2 then ×4 (never compounding off the running total), inside the appeal window (default 7 days). The exact price tiers, window and limit are read live from get_appeal_terms().'],
     ['What is the seal?','A subject’s trust score, 0–100, computed on-chain from the weighted history of its verdicts. 50 means no verdicts exist yet — not a middling record.'],
     ['Where does this app get its data?','Every case, verdict, score and counter is read from OathRegistry view calls over GenLayerJS (Studio network by default; Bradbury selectable). The app holds no local records and simulates nothing.'],
     ['Is this a court?','No. It’s a protocol. You bring the claim.'],

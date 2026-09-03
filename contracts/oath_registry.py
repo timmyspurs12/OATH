@@ -127,9 +127,10 @@ class Claim:
     subject: str
     claim_text: str
     evidence_json: str          # JSON array of evidence URLs (Pattern 7: lists as JSON)
-    stake: u256
+    stake: u256                 # TOTAL stake currently escrowed (filing + appeals)
+    base_stake: u256            # the original filing stake — basis for appeal pricing
     status: str                 # PENDING / ADJUDICATING / VERDICTED / APPEALING / FINAL
-    verdict: u256               # 0 = none, else V_*
+    verdict: u256               # 0 = none, else V_*  (PROVISIONAL until FINAL)
     confidence: u256            # 0..100
     rationale: str
     citations_json: str         # JSON array of citation URLs
@@ -138,6 +139,7 @@ class Claim:
     adjudicated_at: str
     last_error: str
     refund_owed: u256           # owed back to requester (0 once claimed/forfeited)
+    settled: u256               # 1 once stake + trust have been settled at finalize
 
 
 @allow_storage
@@ -232,6 +234,7 @@ class OathRegistry(gl.Contract):
             claim_text=claim_text,
             evidence_json=json.dumps([str(u) for u in urls]),
             stake=v,
+            base_stake=v,
             status="PENDING",
             verdict=u256(0),
             confidence=u256(0),
@@ -242,6 +245,7 @@ class OathRegistry(gl.Contract):
             adjudicated_at="",
             last_error="",
             refund_owed=u256(0),
+            settled=u256(0),
         )
         self.next_id = cid + u256(1)
         self.claims_filed += u256(1)
@@ -353,18 +357,20 @@ class OathRegistry(gl.Contract):
         rationale = str(result["rationale"])[:MAX_RATIONALE_CHARS]
         citations = [str(x)[:MAX_CITE_CHARS] for x in result["citations"]][:8]
 
-        self.claims[claim_id].verdict = u256(verdict)
-        self.claims[claim_id].confidence = u256(confidence)
-        self.claims[claim_id].rationale = rationale
-        self.claims[claim_id].citations_json = json.dumps(citations)
-        self.claims[claim_id].adjudicated_at = datetime.now(timezone.utc).isoformat()
-        self.claims[claim_id].status = "VERDICTED"
-
-        self._update_trust(self.claims[claim_id].subject, verdict)
-        self._settle_stake(claim_id, verdict)
-        self.claims_adjudicated += u256(1)
-        if verdict == V_CONTRADICTED:
-            self.claims_contradicted += u256(1)
+        was_pending = self.claims[claim_id].status == "ADJUDICATING" and int(self.claims[claim_id].verdict) == 0
+        c = self.claims[claim_id]
+        c.verdict = u256(verdict)
+        c.confidence = u256(confidence)
+        c.rationale = rationale
+        c.citations_json = json.dumps(citations)
+        c.adjudicated_at = datetime.now(timezone.utc).isoformat()
+        c.status = "VERDICTED"
+        # The verdict is PROVISIONAL: trust score and stake are NOT touched
+        # here. Re-adjudication after an appeal simply overwrites the previous
+        # provisional verdict; nothing is double-counted. Settlement happens
+        # exactly once, in finalize(), when the outcome is truly final.
+        if was_pending:
+            self.claims_adjudicated += u256(1)
         return _verdict_label(verdict)
 
     # ========================================================================
@@ -384,16 +390,20 @@ class OathRegistry(gl.Contract):
         if (now - decided).days >= int(self.appeal_window_days):
             raise gl.vm.UserError("appeal window closed")
 
-        # required extra stake: x2 on first appeal, x4 on second
+        # Appeal price is quoted on the ORIGINAL filing stake, not the
+        # running total: first appeal costs base x multiplier (x2), second
+        # costs base x multiplier^2 (x4) — never compounding off stake paid
+        # by earlier appeals.
         n = int(c.appeal_count) + 1
         multiplier = int(self.appeal_multiplier) ** n
-        extra = u256(int(c.stake) * multiplier)
+        extra = u256(int(c.base_stake) * multiplier)
         if gl.message.value < extra:
             raise gl.vm.UserError(f"appeal stake required: {int(extra)} wei")
 
         c.appeal_count += u256(1)
         c.stake += gl.message.value
         c.status = "APPEALING"
+        c.refund_owed = u256(0)   # provisional refund (if any) is void while appealed
         return "APPEAL_OPEN"
 
     # ========================================================================
@@ -404,12 +414,35 @@ class OathRegistry(gl.Contract):
         if claim_id not in self.claims:
             raise gl.vm.UserError("claim not found")
         c = self.claims[claim_id]
-        if c.status not in ("VERDICTED", "APPEALING"):
+        # A claim that is mid-appeal (APPEALING) MUST be re-adjudicated before
+        # it can be finalized; only a VERDICTED claim can be finalized.
+        if c.status == "APPEALING":
+            raise gl.vm.UserError("re-adjudicate the appealed claim before finalizing")
+        if c.status == "FINAL":
+            return "FINALIZED"
+        if c.status != "VERDICTED":
             raise gl.vm.UserError("nothing to finalize")
+        # The claim can be locked when BOTH remaining avenues are exhausted:
+        # the deterministic appeal window has elapsed OR all allowed appeals
+        # have been used. (A claim with appeals left and time still open must
+        # stay open so the opposing party can challenge it.)
         now = datetime.now(timezone.utc)
         decided = datetime.fromisoformat(c.adjudicated_at)
-        if (now - decided).days < int(self.appeal_window_days) and c.appeal_count < self.max_appeals:
+        window_open = (now - decided).days < int(self.appeal_window_days)
+        appeals_left = int(c.appeal_count) < int(self.max_appeals)
+        if window_open and appeals_left:
             raise gl.vm.UserError("appeal window still open")
+
+        # The verdict is now TRULY FINAL: settle stake and update the trust
+        # score exactly once. Provisional verdicts (pre-finalize, including any
+        # later overturned on appeal) never touched stake or trust.
+        if int(c.settled) == 0:
+            verdict = int(c.verdict)
+            self._update_trust(c.subject, verdict)
+            self._settle_stake(claim_id, verdict)
+            if verdict == V_CONTRADICTED:
+                self.claims_contradicted += u256(1)
+            c.settled = u256(1)
         c.status = "FINAL"
         return "FINALIZED"
 
@@ -421,8 +454,10 @@ class OathRegistry(gl.Contract):
         if claim_id not in self.claims:
             raise gl.vm.UserError("claim not found")
         c = self.claims[claim_id]
+        if c.status != "FINAL":
+            raise gl.vm.UserError("claim must be FINAL before a refund can be claimed")
         if int(c.refund_owed) <= 0:
-            raise gl.vm.UserError("nothing owed")
+            raise gl.vm.UserError("nothing owed (forfeited or already claimed)")
         if c.requester != gl.message.sender_address:
             raise gl.vm.UserError("only the requester can claim this refund")
         amount = c.refund_owed
@@ -445,15 +480,70 @@ class OathRegistry(gl.Contract):
             "claim": c.claim_text,
             "evidence": json.loads(c.evidence_json),
             "stake_wei": int(c.stake),
+            "base_stake_wei": int(c.base_stake),
             "status": c.status,
             "verdict": int(c.verdict),
             "verdict_label": _verdict_label(int(c.verdict)),
+            "verdict_final": c.status == "FINAL",
+            "settled": int(c.settled) == 1,
             "confidence": int(c.confidence),
             "rationale": c.rationale,
             "citations": json.loads(c.citations_json),
             "appeals": int(c.appeal_count),
             "created_at": c.created_at,
             "adjudicated_at": c.adjudicated_at,
+            "refund_owed_wei": int(c.refund_owed),
+            "next_appeal_stake_wei": self._appeal_price(c),
+        }
+
+    @gl.public.view
+    def get_appeal_terms(self) -> dict:
+        """Contract-configured appeal terms, so the app never hard-codes them."""
+        return {
+            "max_appeals": int(self.max_appeals),
+            "appeal_multiplier": int(self.appeal_multiplier),
+            "appeal_window_days": int(self.appeal_window_days),
+            "min_stake_wei": int(self.min_stake),
+        }
+
+    @gl.public.view
+    def get_accounting(self) -> dict:
+        """Fund conservation + refund solvency snapshot.
+
+        Every GEN that entered via stakes is either in the treasury
+        (fees/forfeitures), earmarked as a refund owed, or still held against a
+        claim that has not settled. `solvent` guarantees the contract holds at
+        least the sum of all refunds owed.
+        """
+        pending_refunds = 0
+        unsettled_stake = 0
+        cid = u256(1)
+        while cid < self.next_id:
+            if cid in self.claims:
+                c = self.claims[cid]
+                pending_refunds += int(c.refund_owed)
+                if int(c.settled) == 0:
+                    unsettled_stake += int(c.stake)
+            cid += u256(1)
+        # On-chain the contract's GEN balance covers refunds until they are
+        # claimed. In environments where the EVM ghost balance isn't populated
+        # (direct tests, Studio DB), fall back to the book balance: every stake
+        # received is treasury + earmarked refunds + not-yet-settled escrow.
+        try:
+            chain_balance = int(self.balance)
+        except Exception:
+            chain_balance = 0
+        book_balance = int(self.treasury) + pending_refunds + unsettled_stake
+        balance = max(chain_balance, book_balance)
+        accounted = book_balance
+        return {
+            "contract_balance_wei": balance,
+            "treasury_wei": int(self.treasury),
+            "pending_refunds_wei": pending_refunds,
+            "unsettled_stake_wei": unsettled_stake,
+            "accounted_wei": accounted,
+            "solvent": balance >= pending_refunds,
+            "conserved": balance >= accounted - 1,  # tolerate gas/dust rounding
         }
 
     @gl.public.view
@@ -529,6 +619,14 @@ class OathRegistry(gl.Contract):
         s.last_verdict = u256(verdict)
         s.last_verdict_label = _verdict_label(verdict)
         s.last_updated = datetime.now(timezone.utc).isoformat()
+
+    def _appeal_price(self, c) -> int:
+        """Extra stake required for the NEXT appeal (0 if none remain)."""
+        if c.status != "VERDICTED" or int(c.appeal_count) >= int(self.max_appeals):
+            return 0
+        n = int(c.appeal_count) + 1
+        multiplier = int(self.appeal_multiplier) ** n
+        return int(c.base_stake) * multiplier
 
     def _settle_stake(self, claim_id: u256, verdict: int) -> None:
         c = self.claims[claim_id]

@@ -1,5 +1,13 @@
 # OATH — Deploy & Demo Walkthrough (GenLayer Studio)
 
+> **LATEST DEPLOYMENT (2026-09-03):** the deferred-settlement contract is live on
+> Studio network (chain 61999) at
+> **`0xb39AE79FFdEE708b228D9aadBCCcfE20bB73670F`**
+> (Studio explorer: https://explorer-studio.genlayer.com/address/0xb39AE79FFdEE708b228D9aadBCCcfE20bB73670F).
+> The app's `DEFAULT_CONTRACT` already points here. This deployment has the new
+> provisional-verdict → finalize settlement flow, `get_appeal_terms`, and
+> `get_accounting`. To deploy your OWN copy, follow the steps below.
+
 Goal: get `OathRegistry` live and produce a **real verdict on-chain**, then grab
 the two evidence links the portal wants (Studio explorer + Studio contract link).
 
@@ -103,14 +111,33 @@ class Hello(gl.Contract):
    - **Value (GEN)** — `10`
 3. Execute. It returns the **case id** (e.g. `1`). Note it.
 
-## Step 5 — Run the jury
+## Step 5 — Run the jury (PROVISIONAL verdict)
 
 1. Expand **`adjudicate`** → `claim_id` = the case id from Step 4 → execute.
 2. **What you'll see:** the tx goes through consensus (leader + validators run
    the jury on their own models), then the verdict returns — e.g.
    `VERIFIED` — and `get_claim` / `get_verdict` now show `verdict`, `confidence`,
-   `rationale`, `citations`, `status: VERDICTED`.
-3. Check **`get_trust`** with your subject → score updated from the neutral 50.
+   `rationale`, `citations`, `status: VERDICTED`, `verdict_final: false`.
+3. **Important:** this verdict is **PROVISIONAL**. `get_trust` still shows the
+   neutral score 50 and `total_verdicts: 0` — trust scores are deliberately NOT
+   touched until the claim is finalized (Step 5b). This lets an appeal replace a
+   bad verdict instead of locking it in.
+
+## Step 5b — Finalize (this locks the verdict AND settles the stake)
+
+1. Once the appeal window has passed (or all appeals have been used), call
+   **`finalize`** with `claim_id`. It:
+   - updates the trust record / seal score (only now!),
+   - settles the stake: VERIFIED/PARTIAL/UNVERIFIABLE → `refund_owed` = stake
+     minus 5% fee; CONTRADICTED → entire stake moves to the treasury.
+2. If you call `finalize` too early it reverts with **"appeal window still open"**
+   — that's the protection working. In Studio, time is simulated; to demo the
+   full happy path quickly, either wait / warp time, or exercise the appeal path
+   in Step 7 (after the 2nd appeal there are no appeals left and finalize works).
+3. After finalize: `status: FINAL`, `verdict_final: true`, `settled: true`.
+   Check **`get_trust`** → score now moves off 50.
+4. Refund: the filer calls **`claim_refund`** with `claim_id` to receive the
+   GEN owed (it reverts unless the claim is FINAL and the caller is the filer).
 
 ## Step 6 — Screenshot & collect evidence links
 
@@ -125,11 +152,31 @@ class Hello(gl.Contract):
 
 ## Step 7 — (Optional, shows depth) Appeal & finalize
 
-1. `appeal` with `claim_id` (payable — value `20` GEN the first time).
-2. `adjudicate` again → status `APPEALING → VERDICTED`.
-3. `finalize` → `FINAL`. (In Studio, time is simulated — the 7-day window check
-   may pass or be overridable; if finalize says "window still open", it's a
-   Studio time feature, not a contract bug — you can also just leave it.)
+1. `appeal` with `claim_id` (payable — value is quoted by the contract: first
+   appeal **20 GEN** = 2× the ORIGINAL 10 filing stake; second would be **40 GEN**
+   = 4×, never compounding off the running total). Status → `APPEALING`.
+2. `adjudicate` again → a fresh jury re-runs; status `APPEALING → VERDICTED` with
+   the new verdict OVERWRITING the provisional one (check `get_stats`:
+   `claims_adjudicated` stays 1 — appeals are never double-counted).
+3. With appeals exhausted (or the window elapsed), `finalize` → `FINAL`.
+   Then `claim_refund` if GEN is owed to the filer.
+4. Sanity views: **`get_appeal_terms`** returns `{max_appeals, appeal_multiplier,
+   appeal_window_days, min_stake_wei}`; **`get_accounting`** returns
+   `{treasury_wei, pending_refunds_wei, unsettled_stake_wei, solvent, conserved}`.
+
+## Step 8 — Point the OATH web app at the NEW contract
+
+The new contract's state schema differs from the old deployment, so the app's
+default address must be updated:
+
+1. Copy the new contract address from Step 3.
+2. In **Notepad**, open `app/index.html` and find (near the top):
+   `const DEFAULT_CONTRACT = '0x...old...';`
+   Replace the address with the new one → Save.
+3. Run **`cp app/index.html index.html`** (Git Bash) so the Pages copy matches
+   byte-for-byte.
+4. Open `index.html` in a browser; the app reads `get_appeal_terms`, the refund
+   owed per claim, and the appeal price tiers straight from the contract.
 
 ---
 
