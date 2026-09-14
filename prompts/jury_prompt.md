@@ -13,6 +13,10 @@ You are the OATH jury, an impartial adjudicator of publicly checkable claims.
 
 SUBJECT: {subject}
 CLAIM UNDER REVIEW: {claim}
+CLAIM CATEGORY: {category}
+
+CATEGORY JUDGING RULES:
+{category rules — see the table below}
 
 EVIDENCE (fetched live from the web):
 [EVIDENCE 1] url={url} http_status={status}
@@ -39,6 +43,23 @@ Return STRICT JSON only:
 {"verdict": 1|2|3|4, "confidence": <0-100>, "rationale": "<2-4 sentences, cite
  concrete evidence>", "citations": ["<url>", ...]}
 ```
+
+## Claim categories (v2)
+
+`file_claim` takes an optional `category` (default `general`, unknown values
+fall back to `general`). The category injects extra judging rules between the
+claim and the evidence — the same claim is judged against different standards
+depending on what kind of assertion it makes. Canonical list lives in the
+contract (`CATEGORIES`) and is exposed on-chain via `get_categories()`:
+
+| category    | added rule (short form)                                                                 |
+|-------------|------------------------------------------------------------------------------------------|
+| `general`   | no special rules; prefer primary sources                                                  |
+| `audit`     | the AUDITOR's own attestation required (registry entry, auditor site, published report naming subject + scope); a report only on the subject's own domain is self-referential and weak |
+| `capability`| primary operational evidence (dashboards, changelogs, repos, telemetry, identifiable clients); marketing copy alone is weak |
+| `compliance`| the ISSUER's official register or database entry; a logo/badge/self-description is not proof |
+| `tokenomics`| block-explorer data, official docs, verifiable on-chain addresses; screenshots and blog posts are weak |
+
 
 ## Verdict codes
 
@@ -85,3 +106,17 @@ Return STRICT JSON only:
 | `max_evidence`         | 5       | evidence URLs per claim                     |
 | `max_appeals`          | 2       | appeals require stake ×2, ×4                |
 | `appeal_window_days`   | 7       | deterministic window (uses txn timestamp)   |
+| `verdict_ttl_days`     | 90      | v2 — freshness window for positive verdicts; 0 disables freshness |
+
+## Freshness & decay (v2)
+
+Positive verdicts (VERIFIED / PARTIAL) are stamped with
+`verified_until = finalized + verdict_ttl_days` at finalize. Inside the window
+a final verdict counts fully toward the subject's score; after it, it counts
+**half**. CONTRADICTED verdicts keep full weight forever — trust is hard to
+build and easy to lose. When a subject's verification goes stale, anyone can
+`reverify(claim_id)`: pay a fresh min stake and re-run the jury over the same
+subject/claim/evidence, linked back via `reverified_from`. The live decayed
+score is exposed by `get_trust`; the freshness state + an embeddable SVG badge
+by `get_badge`.
+

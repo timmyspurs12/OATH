@@ -49,8 +49,14 @@ oath/
 ├── contracts/oath_registry.py    # THE Intelligent Contract (single file, Studio-ready)
 ├── prompts/jury_prompt.md        # canonical jury prompt + tuning knobs
 ├── app/index.html                # single-file SPA (see "The app" below)
+├── sdk/oath_client.py            # v2 agent SDK (reads, writes, trust_gate)
+├── tools/mcp_server.py           # v2 MCP server — OATH for AI agents
+├── tools/agent_example.py        # v2 trust-gated agent demo (--demo = offline)
 ├── tools/offline_demo.py         # run the jury prompt locally, no keys
+├── tests/direct/                 # direct-mode regression tests (gltoolchain)
+├── tests/pure/                   # v2 tests that run anywhere (fake GenVM harness)
 ├── docs/ARCHITECTURE.md          # diagram + design rationale
+├── docs/MILESTONE_V1.md          # v2 delta document (what changed and why)
 └── docs/SUBMISSION.md            # portal type-41 submission walkthrough
 ```
 
@@ -58,18 +64,27 @@ oath/
 
 | Method | Kind | Purpose |
 |---|---|---|
-| `file_claim(subject, claim_text, evidence_json)` | write·payable | file a claim, stake GEN (`evidence_json` is a JSON array string of URLs) |
-| `adjudicate(claim_id)` | write | run the jury (web + LLM + consensus), settle stake, update trust |
+| `file_claim(subject, claim_text, evidence_json, category)` | write·payable | file a claim, stake GEN (`evidence_json` is a JSON array string of URLs; `category` ∈ audit/capability/compliance/tokenomics/general tunes the jury's rules) |
+| `adjudicate(claim_id)` | write | run the jury (web + LLM + consensus), record the provisional verdict |
 | `appeal(claim_id)` | write·payable | re-jury with higher stake (×2, ×4) |
-| `finalize(claim_id)` | write | lock verdict after appeal window |
-| `get_claim(claim_id)` | view | full claim record |
+| `finalize(claim_id)` | write | lock verdict after appeal window; settles stake + trust, stamps `verified_until` |
+| `reverify(claim_id)` | write·payable | **v2** — reopen a FINAL claim as fresh PENDING (freshness loop) |
+| `get_claim(claim_id)` | view | full claim record (incl. category, freshness) |
 | `get_verdict(claim_id)` | view | verdict + rationale + citations |
-| `get_trust(subject)` | view | **the trust score** (0–100, 50 = no data) |
+| `get_trust(subject)` | view | **the trust score** (0–100, time-decayed, 50 = no data) |
 | `get_trust_batch(subjects_json)` | view | batch scores (JSON array string in, JSON string out) |
-| `get_stats()` | view | counters + treasury |
+| `get_badge(subject)` | view | **v2** — attestation card: score, grade A–F, color, freshness + embeddable SVG |
+| `get_categories()` | view | **v2** — category keys → the jury rules each injects |
+| `get_stats()` | view | counters + treasury + full config (incl. `verdict_ttl_days`) |
 
 Constructor knobs: `min_stake`, `fee_bps`, `max_evidence`, `max_appeals`,
-`appeal_multiplier`, `appeal_window_days`.
+`appeal_multiplier`, `appeal_window_days`, `verdict_ttl_days` (v2, default 90).
+
+**v2 protocol upgrades:** claims are *categorized* (category-specific jury
+rules), positive verdicts carry a **freshness window** — inside it they count
+fully toward the score, after it they count half and `reverify()` lets anyone
+re-run the jury at fresh stake — and **CONTRADICTED verdicts never decay**.
+See `docs/MILESTONE_V1.md` for the full v2 delta.
 
 ## Deploy
 
@@ -197,6 +212,35 @@ The verdict quality lives in the prompt. `prompts/jury_prompt.md` documents:
 python3 tools/offline_demo.py https://example.com https://example.org
 # → prints the exact jury prompt; pipe into any local LLM
 ```
+
+## For agents (v2)
+
+OATH's consumer isn't a person — it's the agent about to transact with an
+unknown counterparty.
+
+**SDK** (`sdk/oath_client.py`, needs `pip install genlayer-py`, Python 3.12+):
+
+```python
+from oath_client import OathClient
+oath = OathClient(address="0x…", chain="studionet")
+oath.get_trust("vendor.example")              # live, time-decayed record
+oath.badge_svg("vendor.example")              # embeddable SVG badge
+oath.trust_gate(["vendor.example"])           # TRUSTED / UNTRUSTED + reasons
+```
+
+**MCP server** (`tools/mcp_server.py`) — 11 tools (`oath_get_trust`,
+`oath_get_badge`, `oath_trust_gate`, `oath_file_claim`, `oath_adjudicate`, …)
+for Claude Desktop / Cursor / any MCP client:
+
+```json
+{"mcpServers": {"oath": {"command": "python",
+  "args": ["/path/to/OATH/tools/mcp_server.py"],
+  "env": {"OATH_ADDRESS": "0x…", "OATH_CHAIN": "studionet"}}}}
+```
+
+**Runnable demo:** `python tools/agent_example.py --demo` (offline) or with
+`OATH_ADDRESS=0x…` for live reads — a marketplace agent that holds payments
+to stale or contradicted vendors.
 
 ## License
 
